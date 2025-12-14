@@ -1,0 +1,3003 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1e293b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiR2VsaXItR2lkZXIgVGFraWJpIiwic2hvcnRfbmFtZSI6IkdlbGlyLUdpZGVyIiwic3RhcnRfdXJsIjoiLiIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiMxZTI5M2IiLCJ0aGVtZV9jb2xvciI6IiMxZTI5M2IiLCJpY29ucyI6W3sic3JjIjoiZGF0YTppbWFnZS9zdmcreG1sLDxzdmcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJyB2aWV3Qm94PScwIDAgMTAwIDEwMCc+PHRleHQgeT0nLjllbScgZm9udC1zaXplPSc5MCc+8J+SsDwvdGV4dD48L3N2Zz4iLCJzaXplcyI6ImFueSIsInR5cGUiOiJpbWFnZS9zdmcreG1sIn1dfQ==">
+  <title>Gelir-Gider Takibi</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+    input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+    @media print {
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      body { background: white !important; }
+      * { color: black !important; background: white !important; border-color: #ccc !important; }
+    }
+    .print-only { display: none; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-slide-in { animation: slideIn 0.3s ease-out; }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
+    .animate-shake { animation: shake 0.3s ease-out; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .animate-spin { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ==================== JSONBIN.IO CONFIG ====================
+    // Veriler JSONBin.io'da saklanacak - her cihazdan erişilebilir
+    const JSONBIN_API_KEY = '$2a$10$CO2lfQPPs8nJz30YLvXo4OIJD/ikX.V2hhW2PaKA9bhsxL0i7r/i2';
+    const JSONBIN_BIN_NAME = 'gelir-gider-pro-data';
+
+    // ==================== ŞİFRE HASH FONKSİYONU ====================
+    // Basit hash fonksiyonu (güvenli saklama için)
+    const hashPassword = async (password) => {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(password + 'gelir-gider-pro-salt-2024');
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+
+    // ==================== GİRİŞ EKRANI ====================
+    function LoginScreen({ onLogin, storedUser, onSetUser }) {
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+      const [confirmPassword, setConfirmPassword] = useState('');
+      const [isRegistering, setIsRegistering] = useState(!storedUser);
+      const [error, setError] = useState('');
+      const [showPassword, setShowPassword] = useState(false);
+      const [loading, setLoading] = useState(false);
+
+      const handleRegister = async () => {
+        if (!email || !password) {
+          setError('Email ve şifre gerekli');
+          return;
+        }
+        if (!email.includes('@')) {
+          setError('Geçerli bir email girin');
+          return;
+        }
+        if (password.length < 6) {
+          setError('Şifre en az 6 karakter olmalı');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Şifreler eşleşmiyor');
+          return;
+        }
+        
+        setLoading(true);
+        const hashedPassword = await hashPassword(password);
+        const userData = { email, passwordHash: hashedPassword };
+        onSetUser(userData);
+        setLoading(false);
+        onLogin();
+      };
+
+      const handleLogin = async () => {
+        if (!email || !password) {
+          setError('Email ve şifre gerekli');
+          return;
+        }
+        
+        setLoading(true);
+        const hashedPassword = await hashPassword(password);
+        
+        if (email === storedUser.email && hashedPassword === storedUser.passwordHash) {
+          setLoading(false);
+          onLogin();
+        } else {
+          setLoading(false);
+          setError('Email veya şifre hatalı');
+        }
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        setError('');
+        if (isRegistering) {
+          handleRegister();
+        } else {
+          handleLogin();
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-6">
+          {/* Logo */}
+          <div className="mb-8 text-center">
+            <div className="w-20 h-20 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-5xl">💰</span>
+            </div>
+            <h1 className="text-white text-2xl font-bold">Gelir-Gider Pro</h1>
+            <p className="text-gray-400 mt-2">
+              {isRegistering ? 'Hesap Oluştur' : 'Giriş Yap'}
+            </p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
+            {/* Email */}
+            <div>
+              <label className="text-gray-400 text-sm mb-1 block">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ornek@email.com"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-all"
+                autoComplete="email"
+              />
+            </div>
+
+            {/* Şifre */}
+            <div>
+              <label className="text-gray-400 text-sm mb-1 block">Şifre</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-all pr-12"
+                  autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            {/* Şifre Tekrar (Kayıt için) */}
+            {isRegistering && (
+              <div>
+                <label className="text-gray-400 text-sm mb-1 block">Şifre Tekrar</label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-all"
+                  autoComplete="new-password"
+                />
+              </div>
+            )}
+
+            {/* Hata Mesajı */}
+            {error && (
+              <div className="bg-rose-500/20 border border-rose-500/30 text-rose-400 px-4 py-2 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* Giriş/Kayıt Butonu */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-medium transition-all disabled:opacity-50"
+            >
+              {loading ? 'Bekleyin...' : isRegistering ? 'Hesap Oluştur' : 'Giriş Yap'}
+            </button>
+          </form>
+
+          {/* Kayıt/Giriş Değiştir */}
+          {!isRegistering && storedUser && (
+            <p className="text-gray-500 text-sm mt-6">
+              {storedUser.email} olarak kayıtlı
+            </p>
+          )}
+
+          {/* Şifremi Unuttum */}
+          {!isRegistering && (
+            <button
+              onClick={() => {
+                if (confirm('Şifreyi sıfırlamak TÜM VERİLERİ silecek. Devam edilsin mi?')) {
+                  localStorage.clear();
+                  window.location.reload();
+                }
+              }}
+              className="mt-4 text-gray-500 text-sm hover:text-gray-400 transition-colors"
+            >
+              Şifremi unuttum / Hesabı sıfırla
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    // Modal Bileşeni
+    function Modal({ isOpen, onClose, title, children }) {
+      if (!isOpen) return null;
+      return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          <div className="bg-slate-800 rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto animate-slide-in" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-white">{title}</h3>
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    // Toast Bildirimi
+    function Toast({ message, type, onClose }) {
+      useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+      }, [onClose]);
+
+      const colors = {
+        success: 'bg-emerald-500',
+        error: 'bg-rose-500',
+        info: 'bg-blue-500',
+        warning: 'bg-amber-500'
+      };
+
+      return (
+        <div className={`fixed top-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-xl shadow-lg z-50 animate-slide-in`}>
+          {message}
+        </div>
+      );
+    }
+
+    function GelirGiderApp() {
+      // JSONBin Sync States
+      const [isSyncing, setIsSyncing] = useState(false);
+      const [lastSyncTime, setLastSyncTime] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-last-sync');
+        return saved ? new Date(saved) : null;
+      });
+      const [syncEnabled, setSyncEnabled] = useState(() => {
+        return localStorage.getItem('gelir-gider-sync-enabled') === 'true';
+      });
+      const [binId, setBinId] = useState(() => localStorage.getItem('gelir-gider-bin-id'));
+      const [showSyncModal, setShowSyncModal] = useState(false);
+      
+      // State'ler
+      const [transactions, setTransactions] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-transactions');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [reminders, setReminders] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-reminders');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [cariHesaplar, setCariHesaplar] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-cari');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [cariIslemler, setCariIslemler] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-cari-islemler');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [kasalar, setKasalar] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-kasalar');
+        if (saved) {
+          // Eski verilere isMainKasa ekle (yoksa true yap)
+          const parsed = JSON.parse(saved);
+          return parsed.map(k => ({ ...k, isMainKasa: k.isMainKasa !== undefined ? k.isMainKasa : true }));
+        }
+        return [
+          { id: 'nakit', name: 'Nakit Kasa', icon: '💵', color: 'emerald', isMainKasa: true },
+          { id: 'kredikarti', name: 'Kredi Kartı', icon: '💳', color: 'blue', isMainKasa: true }
+        ];
+      });
+      const [giderKategorileri, setGiderKategorileri] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-gider-kategorileri');
+        return saved ? JSON.parse(saved) : ['Firma Ödemeleri', 'Maaş Ödemeleri', 'Elektrik', 'Su', 'Mutfak Giderleri'];
+      });
+      const [gelirKategorileri, setGelirKategorileri] = useState(() => {
+        const saved = localStorage.getItem('gelir-gider-gelir-kategorileri');
+        return saved ? JSON.parse(saved) : ['Hasta Ödemeleri', 'Ekstra Gelirler'];
+      });
+      const [description, setDescription] = useState('');
+      const [amount, setAmount] = useState('');
+      const [type, setType] = useState('gelir');
+      const [category, setCategory] = useState('');
+      const [paymentMethod, setPaymentMethod] = useState('nakit');
+      const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+      const [note, setNote] = useState('');
+      const [filterType, setFilterType] = useState('all');
+      const [filterKasa, setFilterKasa] = useState('all');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [activeTab, setActiveTab] = useState('islemler');
+      const [startDate, setStartDate] = useState('');
+      const [endDate, setEndDate] = useState('');
+      const [ozetViewMode, setOzetViewMode] = useState('month'); // 'month' veya 'custom'
+      const [ozetStartDate, setOzetStartDate] = useState('');
+      const [ozetEndDate, setOzetEndDate] = useState('');
+      const [toast, setToast] = useState(null);
+      const [editingTransaction, setEditingTransaction] = useState(null);
+      const [showEditModal, setShowEditModal] = useState(false);
+      const [showReminderModal, setShowReminderModal] = useState(false);
+      const [showTransferModal, setShowTransferModal] = useState(false);
+      const [showBackupModal, setShowBackupModal] = useState(false);
+      const [showCariModal, setShowCariModal] = useState(false);
+      const [showCariIslemModal, setShowCariIslemModal] = useState(false);
+      const [showCariDetailModal, setShowCariDetailModal] = useState(false);
+      const [showKasaModal, setShowKasaModal] = useState(false);
+      const [showGiderKategoriModal, setShowGiderKategoriModal] = useState(false);
+      const [showGelirKategoriModal, setShowGelirKategoriModal] = useState(false);
+      const [selectedCari, setSelectedCari] = useState(null);
+      const [newCari, setNewCari] = useState({ name: '', type: 'firma', phone: '', note: '' });
+      const [newCariIslem, setNewCariIslem] = useState({ type: 'borc', amount: '', description: '', vade: '', hatirlatici: false });
+      const [newKasaName, setNewKasaName] = useState('');
+      const [newKasaIsMain, setNewKasaIsMain] = useState(true);
+      const [newGiderKategori, setNewGiderKategori] = useState('');
+      const [newGelirKategori, setNewGelirKategori] = useState('');
+      const [editingKasa, setEditingKasa] = useState(null);
+      const [editingGiderKat, setEditingGiderKat] = useState(null);
+      const [editingGelirKat, setEditingGelirKat] = useState(null);
+      const [editingCari, setEditingCari] = useState(null);
+      const [transferAmount, setTransferAmount] = useState('');
+      const [transferFrom, setTransferFrom] = useState('nakit');
+      const [transferNote, setTransferNote] = useState('');
+      const [newReminder, setNewReminder] = useState({ title: '', amount: '', category: 'gider', day: 1 });
+      const chartRef = useRef(null);
+      const chartInstance = useRef(null);
+
+      // Verileri localStorage'a kaydet
+      useEffect(() => {
+        localStorage.setItem('gelir-gider-transactions', JSON.stringify(transactions));
+      }, [transactions]);
+
+      useEffect(() => {
+        localStorage.setItem('gelir-gider-reminders', JSON.stringify(reminders));
+      }, [reminders]);
+
+      useEffect(() => {
+        localStorage.setItem('gelir-gider-cari', JSON.stringify(cariHesaplar));
+      }, [cariHesaplar]);
+
+      useEffect(() => {
+        localStorage.setItem('gelir-gider-cari-islemler', JSON.stringify(cariIslemler));
+      }, [cariIslemler]);
+
+      useEffect(() => {
+        localStorage.setItem('gelir-gider-kasalar', JSON.stringify(kasalar));
+      }, [kasalar]);
+
+      useEffect(() => {
+        localStorage.setItem('gelir-gider-gider-kategorileri', JSON.stringify(giderKategorileri));
+      }, [giderKategorileri]);
+
+      useEffect(() => {
+        localStorage.setItem('gelir-gider-gelir-kategorileri', JSON.stringify(gelirKategorileri));
+      }, [gelirKategorileri]);
+
+      // Hatırlatıcıları kontrol et
+      useEffect(() => {
+        const today = new Date().getDate();
+        reminders.forEach(reminder => {
+          if (reminder.day === today && !reminder.notifiedToday) {
+            showToast(`Hatırlatma: ${reminder.title} - ${formatMoney(reminder.amount)}`, 'warning');
+            setReminders(prev => prev.map(r => 
+              r.id === reminder.id ? { ...r, notifiedToday: true } : r
+            ));
+          }
+        });
+        // Her gün sıfırla
+        const now = new Date();
+        if (now.getHours() === 0 && now.getMinutes() === 0) {
+          setReminders(prev => prev.map(r => ({ ...r, notifiedToday: false })));
+        }
+      }, [reminders]);
+
+      // Vade hatırlatıcılarını kontrol et
+      useEffect(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        cariIslemler.forEach(islem => {
+          if (islem.vade && islem.hatirlatici && !islem.vadeBildirimYapildi) {
+            const vadeDate = new Date(islem.vade);
+            vadeDate.setHours(0, 0, 0, 0);
+            const diffDays = Math.ceil((vadeDate - today) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 3 && diffDays >= 0) {
+              const cari = cariHesaplar.find(c => c.id === islem.cariId);
+              const cariName = cari ? cari.name : 'Bilinmeyen';
+              showToast(`Vade Hatırlatma: ${cariName} - ${formatMoney(islem.amount)} (${diffDays === 0 ? 'BUGÜN' : diffDays + ' gün kaldı'})`, 'warning');
+              setCariIslemler(prev => prev.map(i => 
+                i.id === islem.id ? { ...i, vadeBildirimYapildi: true } : i
+              ));
+            }
+          }
+        });
+      }, [cariIslemler, cariHesaplar]);
+
+      // Dinamik kategoriler
+      const categories = {
+        gelir: gelirKategorileri,
+        gider: giderKategorileri
+      };
+
+      // Kasa ekleme fonksiyonu
+      const addKasa = () => {
+        if (!newKasaName.trim()) {
+          showToast('Lütfen kasa adı girin', 'error');
+          return;
+        }
+        const kasaId = newKasaName.trim().toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+        const colors = ['purple', 'pink', 'amber', 'cyan', 'indigo', 'rose', 'teal'];
+        const icons = ['💰', '🏦', '💎', '🪙', '📦', '🎯', '⭐'];
+        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+        const randomIcon = icons[Math.floor(Math.random() * icons.length)];
+        
+        const newKasa = {
+          id: kasaId,
+          name: newKasaName.trim(),
+          icon: randomIcon,
+          color: randomColor,
+          isMainKasa: newKasaIsMain
+        };
+        setKasalar([...kasalar, newKasa]);
+        setNewKasaName('');
+        setNewKasaIsMain(true);
+        setShowKasaModal(false);
+        showToast('Kasa eklendi', 'success');
+      };
+
+      // Kasa ana kasa durumunu değiştir
+      const toggleKasaMain = (kasaId) => {
+        setKasalar(kasalar.map(k => k.id === kasaId ? { ...k, isMainKasa: !k.isMainKasa } : k));
+        showToast('Kasa durumu güncellendi', 'success');
+      };
+
+      // Kasa silme
+      const deleteKasa = (kasaId) => {
+        if (kasaId === 'nakit' || kasaId === 'kredikarti') {
+          showToast('Varsayılan kasalar silinemez', 'error');
+          return;
+        }
+        if (confirm('Bu kasayı silmek istediğinize emin misiniz?')) {
+          setKasalar(kasalar.filter(k => k.id !== kasaId));
+          showToast('Kasa silindi', 'info');
+        }
+      };
+
+      // Gider kategorisi ekleme
+      const addGiderKategori = () => {
+        if (!newGiderKategori.trim()) {
+          showToast('Lütfen kategori adı girin', 'error');
+          return;
+        }
+        if (giderKategorileri.includes(newGiderKategori.trim())) {
+          showToast('Bu kategori zaten mevcut', 'error');
+          return;
+        }
+        setGiderKategorileri([...giderKategorileri, newGiderKategori.trim()]);
+        setNewGiderKategori('');
+        setShowGiderKategoriModal(false);
+        showToast('Gider kategorisi eklendi', 'success');
+      };
+
+      // Gider kategorisi silme
+      const deleteGiderKategori = (kategori) => {
+        if (confirm(`"${kategori}" kategorisini silmek istediğinize emin misiniz?`)) {
+          setGiderKategorileri(giderKategorileri.filter(k => k !== kategori));
+          showToast('Kategori silindi', 'info');
+        }
+      };
+
+      // Gider kategorisi düzenleme
+      const updateGiderKategori = (oldName, newName) => {
+        if (!newName.trim()) return;
+        setGiderKategorileri(giderKategorileri.map(k => k === oldName ? newName.trim() : k));
+        setEditingGiderKat(null);
+        showToast('Kategori güncellendi', 'success');
+      };
+
+      // Gelir kategorisi ekleme
+      const addGelirKategori = () => {
+        if (!newGelirKategori.trim()) {
+          showToast('Lütfen kategori adı girin', 'error');
+          return;
+        }
+        if (gelirKategorileri.includes(newGelirKategori.trim())) {
+          showToast('Bu kategori zaten mevcut', 'error');
+          return;
+        }
+        setGelirKategorileri([...gelirKategorileri, newGelirKategori.trim()]);
+        setNewGelirKategori('');
+        showToast('Gelir kategorisi eklendi', 'success');
+      };
+
+      // Gelir kategorisi silme
+      const deleteGelirKategori = (kategori) => {
+        if (confirm(`"${kategori}" kategorisini silmek istediğinize emin misiniz?`)) {
+          setGelirKategorileri(gelirKategorileri.filter(k => k !== kategori));
+          showToast('Kategori silindi', 'info');
+        }
+      };
+
+      // Gelir kategorisi düzenleme
+      const updateGelirKategori = (oldName, newName) => {
+        if (!newName.trim()) return;
+        setGelirKategorileri(gelirKategorileri.map(k => k === oldName ? newName.trim() : k));
+        setEditingGelirKat(null);
+        showToast('Kategori güncellendi', 'success');
+      };
+
+      // Kasa düzenleme
+      const updateKasa = (kasaId, newName) => {
+        if (!newName.trim()) return;
+        setKasalar(kasalar.map(k => k.id === kasaId ? { ...k, name: newName.trim() } : k));
+        setEditingKasa(null);
+        showToast('Kasa güncellendi', 'success');
+      };
+
+      // Cari hesap düzenleme
+      const updateCariHesap = () => {
+        if (!editingCari || !editingCari.name.trim()) {
+          showToast('Lütfen cari hesap adı girin', 'error');
+          return;
+        }
+        setCariHesaplar(cariHesaplar.map(c => c.id === editingCari.id ? editingCari : c));
+        setEditingCari(null);
+        showToast('Cari hesap güncellendi', 'success');
+      };
+
+      const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+      };
+
+      // ==================== JSONBIN SYNC FUNCTIONS ====================
+      
+      // Tüm verileri tek objede topla
+      const getAllData = () => ({
+        version: '5.0',
+        exportDate: new Date().toISOString(),
+        transactions,
+        reminders,
+        cariHesaplar,
+        cariIslemler,
+        kasalar,
+        giderKategorileri,
+        gelirKategorileri
+      });
+
+      // JSONBin'e kaydet
+      const saveToCloud = async () => {
+        if (!syncEnabled) return;
+        
+        setIsSyncing(true);
+        try {
+          const data = getAllData();
+          let savedBinId = binId || localStorage.getItem('gelir-gider-bin-id');
+          
+          if (savedBinId) {
+            // Mevcut bin'i güncelle
+            await fetch(`https://api.jsonbin.io/v3/b/${savedBinId}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Master-Key': JSONBIN_API_KEY
+              },
+              body: JSON.stringify(data)
+            });
+          } else {
+            // Yeni bin oluştur
+            const response = await fetch('https://api.jsonbin.io/v3/b', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Master-Key': JSONBIN_API_KEY,
+                'X-Bin-Name': JSONBIN_BIN_NAME
+              },
+              body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            savedBinId = result.metadata.id;
+            setBinId(savedBinId);
+            localStorage.setItem('gelir-gider-bin-id', savedBinId);
+          }
+          
+          const now = new Date();
+          setLastSyncTime(now);
+          localStorage.setItem('gelir-gider-last-sync', now.toISOString());
+          showToast('☁️ Buluta kaydedildi!', 'success');
+        } catch (error) {
+          console.error('Sync error:', error);
+          showToast('Senkronizasyon hatası!', 'error');
+        }
+        setIsSyncing(false);
+      };
+
+      // JSONBin'den yükle
+      const loadFromCloud = async () => {
+        const savedBinId = binId || localStorage.getItem('gelir-gider-bin-id');
+        if (!savedBinId) {
+          showToast('Henüz bulut verisi yok. Önce kaydedin.', 'warning');
+          return;
+        }
+        
+        setIsSyncing(true);
+        try {
+          const response = await fetch(`https://api.jsonbin.io/v3/b/${savedBinId}/latest`, {
+            headers: {
+              'X-Master-Key': JSONBIN_API_KEY
+            }
+          });
+          const result = await response.json();
+          const data = result.record;
+          
+          if (data) {
+            if (data.transactions) setTransactions(data.transactions);
+            if (data.reminders) setReminders(data.reminders);
+            if (data.cariHesaplar) setCariHesaplar(data.cariHesaplar);
+            if (data.cariIslemler) setCariIslemler(data.cariIslemler);
+            if (data.kasalar) setKasalar(data.kasalar);
+            if (data.giderKategorileri) setGiderKategorileri(data.giderKategorileri);
+            if (data.gelirKategorileri) setGelirKategorileri(data.gelirKategorileri);
+            
+            const now = new Date();
+            setLastSyncTime(now);
+            localStorage.setItem('gelir-gider-last-sync', now.toISOString());
+            showToast('☁️ Buluttan yüklendi!', 'success');
+          }
+        } catch (error) {
+          console.error('Load error:', error);
+          showToast('Yükleme hatası!', 'error');
+        }
+        setIsSyncing(false);
+      };
+
+      // Senkronizasyonu etkinleştir
+      const enableSync = async () => {
+        setSyncEnabled(true);
+        localStorage.setItem('gelir-gider-sync-enabled', 'true');
+        await saveToCloud();
+      };
+
+      // Senkronizasyonu devre dışı bırak
+      const disableSync = () => {
+        setSyncEnabled(false);
+        localStorage.setItem('gelir-gider-sync-enabled', 'false');
+        showToast('Senkronizasyon kapatıldı', 'info');
+      };
+
+      // Başka cihazdan veri çek (Bin ID ile)
+      const importFromBinId = async (importBinId) => {
+        if (!importBinId || importBinId.trim() === '') {
+          showToast('Lütfen Bin ID girin', 'error');
+          return;
+        }
+        
+        setIsSyncing(true);
+        try {
+          const response = await fetch(`https://api.jsonbin.io/v3/b/${importBinId.trim()}/latest`, {
+            headers: {
+              'X-Master-Key': JSONBIN_API_KEY
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error('Geçersiz Bin ID');
+          }
+          
+          const result = await response.json();
+          const data = result.record;
+          
+          if (data) {
+            if (data.transactions) setTransactions(data.transactions);
+            if (data.reminders) setReminders(data.reminders);
+            if (data.cariHesaplar) setCariHesaplar(data.cariHesaplar);
+            if (data.cariIslemler) setCariIslemler(data.cariIslemler);
+            if (data.kasalar) setKasalar(data.kasalar);
+            if (data.giderKategorileri) setGiderKategorileri(data.giderKategorileri);
+            if (data.gelirKategorileri) setGelirKategorileri(data.gelirKategorileri);
+            
+            setBinId(importBinId.trim());
+            localStorage.setItem('gelir-gider-bin-id', importBinId.trim());
+            setSyncEnabled(true);
+            localStorage.setItem('gelir-gider-sync-enabled', 'true');
+            
+            const now = new Date();
+            setLastSyncTime(now);
+            localStorage.setItem('gelir-gider-last-sync', now.toISOString());
+            showToast('☁️ Veriler başarıyla yüklendi!', 'success');
+          }
+        } catch (error) {
+          console.error('Import error:', error);
+          showToast('Geçersiz Bin ID veya yükleme hatası!', 'error');
+        }
+        setIsSyncing(false);
+      };
+
+      // Veri değiştiğinde otomatik senkronizasyon (10 saniye bekle)
+      useEffect(() => {
+        if (!syncEnabled) return;
+        
+        const timer = setTimeout(() => {
+          saveToCloud();
+        }, 10000);
+        
+        return () => clearTimeout(timer);
+      }, [transactions, cariHesaplar, cariIslemler, kasalar, giderKategorileri, gelirKategorileri, reminders, syncEnabled]);
+
+      // ==================== END JSONBIN SYNC FUNCTIONS ====================
+
+      const formatMoney = (num) => {
+        return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(num);
+      };
+
+      const formatDateTR = (dateStr) => {
+        if (dateStr.includes('.')) return dateStr;
+        const [year, month, day] = dateStr.split('-');
+        return `${day}.${month}.${year}`;
+      };
+
+      const parseDateTR = (dateStr) => {
+        if (!dateStr.includes('.')) return dateStr;
+        const [day, month, year] = dateStr.split('.');
+        return `${year}-${month}-${day}`;
+      };
+
+      const getTodayString = () => new Date().toLocaleDateString('tr-TR');
+
+      const isToday = (dateStr) => dateStr === getTodayString();
+
+      const isThisMonth = (dateStr) => {
+        const today = new Date();
+        const [day, month, year] = dateStr.split('.').map(Number);
+        return month === (today.getMonth() + 1) && year === today.getFullYear();
+      };
+
+      const isInDateRange = (dateStr, start, end) => {
+        if (!start && !end) return true;
+        const [day, month, year] = dateStr.split('.').map(Number);
+        const date = new Date(year, month - 1, day);
+        if (start && end) {
+          const startD = new Date(start);
+          const endD = new Date(end);
+          endD.setHours(23, 59, 59);
+          return date >= startD && date <= endD;
+        } else if (start) {
+          return date >= new Date(start);
+        } else if (end) {
+          const endD = new Date(end);
+          endD.setHours(23, 59, 59);
+          return date <= endD;
+        }
+        return true;
+      };
+
+      // İşlem Ekleme
+      const addTransaction = () => {
+        if (!description.trim() || !amount || !category) {
+          showToast('Lütfen tüm alanları doldurun', 'error');
+          return;
+        }
+        
+        const newTransaction = {
+          id: Date.now(),
+          description: description.trim(),
+          amount: parseFloat(amount),
+          type,
+          category,
+          paymentMethod: paymentMethod,
+          date: formatDateTR(selectedDate),
+          note: note.trim(),
+          createdAt: new Date().toISOString()
+        };
+        
+        setTransactions([newTransaction, ...transactions]);
+        setDescription('');
+        setAmount('');
+        setCategory('');
+        setNote('');
+        setSelectedDate(new Date().toISOString().split('T')[0]);
+        showToast('İşlem başarıyla eklendi', 'success');
+      };
+
+      // İşlem Silme
+      const deleteTransaction = (id) => {
+        if (confirm('Bu işlemi silmek istediğinize emin misiniz?')) {
+          setTransactions(transactions.filter(t => t.id !== id));
+          showToast('İşlem silindi', 'info');
+        }
+      };
+
+      // İşlem Düzenleme
+      const startEdit = (transaction) => {
+        setEditingTransaction({ 
+          ...transaction, 
+          date: parseDateTR(transaction.date)
+        });
+        setShowEditModal(true);
+      };
+
+      const saveEdit = () => {
+        if (!editingTransaction.description || !editingTransaction.amount) {
+          showToast('Lütfen tüm alanları doldurun', 'error');
+          return;
+        }
+        setTransactions(transactions.map(t => 
+          t.id === editingTransaction.id 
+            ? { ...editingTransaction, date: formatDateTR(editingTransaction.date), amount: parseFloat(editingTransaction.amount) }
+            : t
+        ));
+        setShowEditModal(false);
+        setEditingTransaction(null);
+        showToast('İşlem güncellendi', 'success');
+      };
+
+      // Kasalar Arası Transfer
+      const handleTransfer = () => {
+        if (!transferAmount || parseFloat(transferAmount) <= 0) {
+          showToast('Geçerli bir tutar girin', 'error');
+          return;
+        }
+        
+        const amt = parseFloat(transferAmount);
+        const fromKasa = transferFrom === 'nakit' ? 'Nakit Kasa' : 'Kredi Kartı Kasası';
+        const toKasa = transferFrom === 'nakit' ? 'Kredi Kartı Kasası' : 'Nakit Kasa';
+        
+        // Çıkış işlemi
+        const outTransaction = {
+          id: Date.now(),
+          description: `Transfer: ${fromKasa} → ${toKasa}`,
+          amount: amt,
+          type: 'transfer-out',
+          category: 'Transfer',
+          paymentMethod: transferFrom,
+          date: getTodayString(),
+          note: transferNote,
+          createdAt: new Date().toISOString()
+        };
+        
+        // Giriş işlemi
+        const inTransaction = {
+          id: Date.now() + 1,
+          description: `Transfer: ${fromKasa} → ${toKasa}`,
+          amount: amt,
+          type: 'transfer-in',
+          category: 'Transfer',
+          paymentMethod: transferFrom === 'nakit' ? 'kredikarti' : 'nakit',
+          date: getTodayString(),
+          note: transferNote,
+          createdAt: new Date().toISOString()
+        };
+        
+        setTransactions([inTransaction, outTransaction, ...transactions]);
+        setTransferAmount('');
+        setTransferNote('');
+        setShowTransferModal(false);
+        showToast('Transfer tamamlandı', 'success');
+      };
+
+      // Hatırlatıcı Ekleme
+      const addReminder = () => {
+        if (!newReminder.title || !newReminder.amount) {
+          showToast('Lütfen tüm alanları doldurun', 'error');
+          return;
+        }
+        const reminder = {
+          id: Date.now(),
+          ...newReminder,
+          amount: parseFloat(newReminder.amount),
+          notifiedToday: false
+        };
+        setReminders([...reminders, reminder]);
+        setNewReminder({ title: '', amount: '', category: 'gider', day: 1 });
+        showToast('Hatırlatıcı eklendi', 'success');
+      };
+
+      const deleteReminder = (id) => {
+        setReminders(reminders.filter(r => r.id !== id));
+        showToast('Hatırlatıcı silindi', 'info');
+      };
+
+      // ==================== CARİ HESAP FONKSİYONLARI ====================
+      
+      // Yeni Cari Hesap Ekle
+      const addCariHesap = () => {
+        if (!newCari.name.trim()) {
+          showToast('Lütfen cari hesap adı girin', 'error');
+          return;
+        }
+        const cari = {
+          id: Date.now(),
+          name: newCari.name.trim(),
+          type: newCari.type,
+          phone: newCari.phone.trim(),
+          note: newCari.note.trim(),
+          createdAt: new Date().toISOString()
+        };
+        setCariHesaplar([...cariHesaplar, cari]);
+        setNewCari({ name: '', type: 'firma', phone: '', note: '' });
+        setShowCariModal(false);
+        showToast('Cari hesap eklendi', 'success');
+      };
+
+      // Cari Hesap Sil
+      const deleteCariHesap = (id) => {
+        if (confirm('Bu cari hesabı ve tüm işlemlerini silmek istediğinize emin misiniz?')) {
+          setCariHesaplar(cariHesaplar.filter(c => c.id !== id));
+          setCariIslemler(cariIslemler.filter(i => i.cariId !== id));
+          setShowCariDetailModal(false);
+          showToast('Cari hesap silindi', 'info');
+        }
+      };
+
+      // Cari İşlem Ekle (Borç/Alacak)
+      const addCariIslem = () => {
+        if (!newCariIslem.amount || !selectedCari) {
+          showToast('Lütfen tutar girin', 'error');
+          return;
+        }
+        const islem = {
+          id: Date.now(),
+          cariId: selectedCari.id,
+          type: newCariIslem.type, // 'borc' veya 'alacak' veya 'odeme'
+          amount: parseFloat(newCariIslem.amount),
+          description: newCariIslem.description.trim(),
+          vade: newCariIslem.vade || null,
+          hatirlatici: newCariIslem.hatirlatici,
+          vadeBildirimYapildi: false,
+          date: formatDateTR(new Date().toISOString().split('T')[0]),
+          createdAt: new Date().toISOString()
+        };
+        setCariIslemler([islem, ...cariIslemler]);
+        
+        // Vade varsa ve hatırlatıcı seçildiyse otomatik hatırlatıcı ekle
+        if (newCariIslem.vade && newCariIslem.hatirlatici) {
+          const vadeDate = new Date(newCariIslem.vade);
+          // 3 gün öncesi için hatırlatıcı
+          const reminderDate = new Date(vadeDate);
+          reminderDate.setDate(reminderDate.getDate() - 3);
+          const reminderDay = reminderDate.getDate();
+          
+          const typeLabel = newCariIslem.type === 'alacak' ? 'Alacak' : newCariIslem.type === 'borc' ? 'Borç' : 'Ödeme';
+          const reminder = {
+            id: Date.now() + 1,
+            title: `📅 Vade: ${selectedCari.name} - ${typeLabel}`,
+            amount: parseFloat(newCariIslem.amount),
+            category: newCariIslem.type === 'alacak' ? 'gelir' : 'gider',
+            day: reminderDay,
+            notifiedToday: false,
+            isVadeReminder: true,
+            vadeDate: newCariIslem.vade,
+            cariId: selectedCari.id
+          };
+          setReminders(prev => [...prev, reminder]);
+          showToast(`İşlem eklendi + Hatırlatıcı: Her ayın ${reminderDay}. günü`, 'success');
+        } else {
+          showToast('İşlem eklendi', 'success');
+        }
+        
+        setNewCariIslem({ type: 'borc', amount: '', description: '', vade: '', hatirlatici: false });
+        setShowCariIslemModal(false);
+      };
+
+      // Cari İşlem Sil
+      const deleteCariIslem = (id) => {
+        if (confirm('Bu işlemi silmek istediğinize emin misiniz?')) {
+          setCariIslemler(cariIslemler.filter(i => i.id !== id));
+          showToast('İşlem silindi', 'info');
+        }
+      };
+
+      // Cari Hesap Bakiye Hesapla
+      const getCariBalance = (cariId) => {
+        const islemler = cariIslemler.filter(i => i.cariId === cariId);
+        let alacak = 0;
+        let borc = 0;
+        islemler.forEach(i => {
+          if (i.type === 'alacak') alacak += i.amount;
+          else if (i.type === 'borc') borc += i.amount;
+          else if (i.type === 'odeme') alacak -= i.amount; // Ödeme alacaktan düşer
+        });
+        return { alacak, borc, bakiye: alacak - borc };
+      };
+
+      // Toplam Cari Bakiyeler
+      const totalCariAlacak = cariHesaplar.reduce((sum, c) => sum + getCariBalance(c.id).alacak, 0);
+      const totalCariBorc = cariHesaplar.reduce((sum, c) => sum + Math.abs(Math.min(0, getCariBalance(c.id).bakiye)), 0);
+      const totalCariBakiye = cariHesaplar.reduce((sum, c) => sum + getCariBalance(c.id).bakiye, 0);
+
+      // Yaklaşan Vadeler
+      const getYaklasanVadeler = () => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return cariIslemler
+          .filter(i => i.vade)
+          .map(i => {
+            const vadeDate = new Date(i.vade);
+            vadeDate.setHours(0, 0, 0, 0);
+            const diffDays = Math.ceil((vadeDate - today) / (1000 * 60 * 60 * 24));
+            const cari = cariHesaplar.find(c => c.id === i.cariId);
+            return { ...i, cariName: cari?.name || 'Bilinmeyen', diffDays };
+          })
+          .filter(i => i.diffDays >= 0 && i.diffDays <= 30)
+          .sort((a, b) => a.diffDays - b.diffDays);
+      };
+
+      // Excel'e Aktar
+      const exportToExcel = () => {
+        const data = transactions.map(t => ({
+          'Tarih': t.date,
+          'Tür': t.type === 'gelir' ? 'Gelir' : t.type === 'gider' ? 'Gider' : 'Transfer',
+          'Kategori': t.category,
+          'Açıklama': t.description,
+          'Tutar': t.amount,
+          'Kasa': t.paymentMethod === 'nakit' ? 'Nakit' : t.paymentMethod === 'kredikarti' ? 'Kredi Kartı' : '-',
+          'Not': t.note || ''
+        }));
+        
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'İşlemler');
+        
+        // Özet sayfası
+        const summary = [
+          { 'Açıklama': 'Toplam Gelir', 'Tutar': totalIncome },
+          { 'Açıklama': 'Toplam Gider', 'Tutar': totalExpense },
+          { 'Açıklama': 'Net Bakiye', 'Tutar': balance },
+          { 'Açıklama': 'Nakit Kasa', 'Tutar': nakitKasa },
+          { 'Açıklama': 'Kredi Kartı Kasası', 'Tutar': krediKartiKasa }
+        ];
+        const ws2 = XLSX.utils.json_to_sheet(summary);
+        XLSX.utils.book_append_sheet(wb, ws2, 'Özet');
+        
+        XLSX.writeFile(wb, `gelir-gider-${new Date().toISOString().split('T')[0]}.xlsx`);
+        showToast('Excel dosyası indirildi', 'success');
+      };
+
+      // Yedekleme
+      const backupData = () => {
+        const data = {
+          transactions,
+          reminders,
+          cariHesaplar,
+          cariIslemler,
+          kasalar,
+          giderKategorileri,
+          gelirKategorileri,
+          exportDate: new Date().toISOString(),
+          version: '4.0'
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gelir-gider-yedek-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Yedek dosyası indirildi', 'success');
+      };
+
+      const restoreData = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = JSON.parse(e.target.result);
+            if (data.transactions) {
+              if (confirm(`${data.transactions.length} işlem, ${data.cariHesaplar?.length || 0} cari hesap, ${data.kasalar?.length || 0} kasa geri yüklenecek. Mevcut veriler silinecek. Devam edilsin mi?`)) {
+                setTransactions(data.transactions);
+                setReminders(data.reminders || []);
+                setCariHesaplar(data.cariHesaplar || []);
+                setCariIslemler(data.cariIslemler || []);
+                if (data.kasalar) setKasalar(data.kasalar);
+                if (data.giderKategorileri) setGiderKategorileri(data.giderKategorileri);
+                if (data.gelirKategorileri) setGelirKategorileri(data.gelirKategorileri);
+                showToast('Veriler başarıyla geri yüklendi', 'success');
+              }
+            } else {
+              showToast('Geçersiz yedek dosyası', 'error');
+            }
+          } catch (err) {
+            showToast('Dosya okunamadı', 'error');
+          }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+      };
+
+      // Yazdırma
+      const printReport = () => {
+        window.print();
+      };
+
+      // Hesaplamalar
+      const calculateKasa = (method) => {
+        let total = 0;
+        transactions.forEach(t => {
+          if (t.paymentMethod === method) {
+            if (t.type === 'gelir') total += t.amount;
+            else if (t.type === 'gider') total -= t.amount;
+            else if (t.type === 'transfer-out') total -= t.amount;
+            else if (t.type === 'transfer-in') total += t.amount;
+          }
+        });
+        return total;
+      };
+
+      // Tüm kasaların bakiyelerini hesapla
+      const kasaBakiyeleri = kasalar.reduce((acc, kasa) => {
+        acc[kasa.id] = calculateKasa(kasa.id);
+        return acc;
+      }, {});
+
+      const nakitKasa = kasaBakiyeleri['nakit'] || 0;
+      const krediKartiKasa = kasaBakiyeleri['kredikarti'] || 0;
+      
+      // Sadece ana kasaların toplamı
+      const toplamKasaBakiye = kasalar
+        .filter(k => k.isMainKasa !== false)
+        .reduce((sum, kasa) => sum + (kasaBakiyeleri[kasa.id] || 0), 0);
+      
+      // Harici kasaların toplamı (ana kasaya dahil olmayanlar)
+      const hariciKasaBakiye = kasalar
+        .filter(k => k.isMainKasa === false)
+        .reduce((sum, kasa) => sum + (kasaBakiyeleri[kasa.id] || 0), 0);
+
+      const totalIncome = transactions
+        .filter(t => t.type === 'gelir')
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      const totalExpense = transactions
+        .filter(t => t.type === 'gider')
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      const balance = totalIncome - totalExpense;
+
+      // Filtrelenmiş işlemler
+      const filteredTransactions = transactions.filter(t => {
+        const typeMatch = filterType === 'all' || t.type === filterType || 
+          (filterType === 'transfer' && (t.type === 'transfer-in' || t.type === 'transfer-out'));
+        const kasaMatch = filterKasa === 'all' || t.paymentMethod === filterKasa;
+        const searchMatch = !searchQuery || 
+          t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          t.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (t.note && t.note.toLowerCase().includes(searchQuery.toLowerCase()));
+        return typeMatch && kasaMatch && searchMatch;
+      });
+
+      // İstatistikler
+      const todayTransactions = transactions.filter(t => isToday(t.date));
+      const todayIncome = todayTransactions.filter(t => t.type === 'gelir').reduce((s, t) => s + t.amount, 0);
+      const todayExpense = todayTransactions.filter(t => t.type === 'gider').reduce((s, t) => s + t.amount, 0);
+
+      const monthTransactions = transactions.filter(t => isThisMonth(t.date));
+      const monthIncome = monthTransactions.filter(t => t.type === 'gelir').reduce((s, t) => s + t.amount, 0);
+      const monthExpense = monthTransactions.filter(t => t.type === 'gider').reduce((s, t) => s + t.amount, 0);
+      const monthIncomeNakit = monthTransactions.filter(t => t.type === 'gelir' && t.paymentMethod === 'nakit').reduce((s, t) => s + t.amount, 0);
+      const monthIncomeKrediKarti = monthTransactions.filter(t => t.type === 'gelir' && t.paymentMethod === 'kredikarti').reduce((s, t) => s + t.amount, 0);
+
+      const rangeTransactions = transactions.filter(t => isInDateRange(t.date, startDate, endDate));
+      const rangeIncome = rangeTransactions.filter(t => t.type === 'gelir').reduce((s, t) => s + t.amount, 0);
+      const rangeExpense = rangeTransactions.filter(t => t.type === 'gider').reduce((s, t) => s + t.amount, 0);
+      const rangeIncomeNakit = rangeTransactions.filter(t => t.type === 'gelir' && t.paymentMethod === 'nakit').reduce((s, t) => s + t.amount, 0);
+      const rangeIncomeKrediKarti = rangeTransactions.filter(t => t.type === 'gelir' && t.paymentMethod === 'kredikarti').reduce((s, t) => s + t.amount, 0);
+
+      const monthExpenseByCategory = categories.gider.map(cat => ({
+        category: cat,
+        amount: monthTransactions.filter(t => t.type === 'gider' && t.category === cat).reduce((s, t) => s + t.amount, 0)
+      })).filter(c => c.amount > 0);
+
+      // Grafik
+      useEffect(() => {
+        if (activeTab === 'grafikler' && chartRef.current) {
+          if (chartInstance.current) {
+            chartInstance.current.destroy();
+          }
+
+          const last6Months = [];
+          const now = new Date();
+          for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            last6Months.push({
+              month: d.getMonth() + 1,
+              year: d.getFullYear(),
+              label: d.toLocaleDateString('tr-TR', { month: 'short', year: '2-digit' })
+            });
+          }
+
+          const incomeData = last6Months.map(m => {
+            return transactions
+              .filter(t => {
+                const [d, mo, y] = t.date.split('.').map(Number);
+                return t.type === 'gelir' && mo === m.month && y === m.year;
+              })
+              .reduce((s, t) => s + t.amount, 0);
+          });
+
+          const expenseData = last6Months.map(m => {
+            return transactions
+              .filter(t => {
+                const [d, mo, y] = t.date.split('.').map(Number);
+                return t.type === 'gider' && mo === m.month && y === m.year;
+              })
+              .reduce((s, t) => s + t.amount, 0);
+          });
+
+          chartInstance.current = new Chart(chartRef.current, {
+            type: 'bar',
+            data: {
+              labels: last6Months.map(m => m.label),
+              datasets: [
+                {
+                  label: 'Gelir',
+                  data: incomeData,
+                  backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                  borderColor: 'rgb(16, 185, 129)',
+                  borderWidth: 1
+                },
+                {
+                  label: 'Gider',
+                  data: expenseData,
+                  backgroundColor: 'rgba(244, 63, 94, 0.7)',
+                  borderColor: 'rgb(244, 63, 94)',
+                  borderWidth: 1
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  labels: { color: '#9ca3af' }
+                }
+              },
+              scales: {
+                x: {
+                  ticks: { color: '#9ca3af' },
+                  grid: { color: 'rgba(255,255,255,0.1)' }
+                },
+                y: {
+                  ticks: { color: '#9ca3af' },
+                  grid: { color: 'rgba(255,255,255,0.1)' }
+                }
+              }
+            }
+          });
+        }
+      }, [activeTab, transactions]);
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 md:p-8">
+          {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+          
+          <div className="max-w-4xl mx-auto">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6 no-print">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-white">💰 Gelir-Gider Takibi</h1>
+                {syncEnabled && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}></div>
+                    <span className="text-gray-400 text-xs">
+                      {isSyncing ? 'Senkronize ediliyor...' : lastSyncTime ? `Son sync: ${lastSyncTime.toLocaleTimeString('tr-TR')}` : '☁️ Bulut aktif'}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 items-center">
+                {/* Sync Butonu */}
+                <button
+                  onClick={() => setShowSyncModal(true)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
+                    syncEnabled 
+                      ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400' 
+                      : 'bg-white/5 hover:bg-white/10 text-gray-400'
+                  }`}
+                  title="Bulut Senkronizasyon"
+                >
+                  {isSyncing ? (
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <span>☁️</span>
+                  )}
+                  <span className="hidden md:inline text-sm">{syncEnabled ? 'Bağlı' : 'Sync'}</span>
+                </button>
+                <button
+                  onClick={() => setShowBackupModal(true)}
+                  className="bg-white/5 hover:bg-white/10 text-gray-400 p-2 rounded-lg transition-all"
+                  title="Yedekleme"
+                >
+                  💾
+                </button>
+                <button
+                  onClick={printReport}
+                  className="bg-white/5 hover:bg-white/10 text-gray-400 p-2 rounded-lg transition-all"
+                  title="Yazdır"
+                >
+                  🖨️
+                </button>
+              </div>
+            </div>
+
+            {/* Print Header */}
+            <div className="print-only text-center mb-8">
+              <h1 className="text-2xl font-bold">Gelir-Gider Raporu</h1>
+              <p className="text-gray-600">{new Date().toLocaleDateString('tr-TR')}</p>
+            </div>
+
+            {/* Tab Navigasyonu */}
+            <div className="flex gap-2 mb-6 overflow-x-auto no-print">
+              {[
+                { id: 'islemler', icon: '📝', label: 'İşlemler' },
+                { id: 'ozet', icon: '📊', label: 'Özet' },
+                { id: 'grafikler', icon: '📈', label: 'Grafikler' },
+                { id: 'hatirlatici', icon: '🔔', label: 'Hatırlatıcılar' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-shrink-0 py-3 px-4 rounded-xl font-medium transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-indigo-500 text-white'
+                      : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                  }`}
+                >
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ==================== İŞLEMLER TAB ==================== */}
+            {activeTab === 'islemler' && (
+            <>
+              {/* Kasa Kartları */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🏦</span>
+                    <h2 className="text-white font-semibold">Kasalar</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowKasaModal(true)}
+                      className="bg-white/10 hover:bg-white/20 text-gray-300 px-3 py-1 rounded-lg text-sm transition-all"
+                    >
+                      ✏️ Düzenle
+                    </button>
+                    <button
+                      onClick={() => setShowKasaModal(true)}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded-lg text-sm transition-all"
+                    >
+                      + Ekle
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {kasalar.map(kasa => {
+                    const colorClasses = {
+                      emerald: 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400 text-emerald-300',
+                      blue: 'bg-blue-500/20 border-blue-500/30 text-blue-400 text-blue-300',
+                      purple: 'bg-purple-500/20 border-purple-500/30 text-purple-400 text-purple-300',
+                      pink: 'bg-pink-500/20 border-pink-500/30 text-pink-400 text-pink-300',
+                      amber: 'bg-amber-500/20 border-amber-500/30 text-amber-400 text-amber-300',
+                      cyan: 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400 text-cyan-300',
+                      indigo: 'bg-indigo-500/20 border-indigo-500/30 text-indigo-400 text-indigo-300',
+                      rose: 'bg-rose-500/20 border-rose-500/30 text-rose-400 text-rose-300',
+                      teal: 'bg-teal-500/20 border-teal-500/30 text-teal-400 text-teal-300'
+                    };
+                    const isHarici = kasa.isMainKasa === false;
+                    const colors = isHarici ? 'bg-gray-500/10 border-gray-500/30 text-gray-400 text-gray-300' : (colorClasses[kasa.color] || colorClasses.emerald);
+                    const [bgColor, borderColor, textColor, valueColor] = colors.split(' ');
+                    
+                    return (
+                      <div key={kasa.id} className={`${bgColor} border ${borderColor} rounded-xl p-3 relative group`}>
+                        {kasa.id !== 'nakit' && kasa.id !== 'kredikarti' && (
+                          <button
+                            onClick={() => deleteKasa(kasa.id)}
+                            className="absolute top-2 right-2 text-gray-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all text-sm"
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-lg">{kasa.icon}</span>
+                          <p className={`${textColor} font-medium text-sm`}>{kasa.name}</p>
+                          {isHarici && <span className="text-xs bg-gray-500/30 text-gray-400 px-1.5 py-0.5 rounded">Harici</span>}
+                        </div>
+                        <p className={`${valueColor} text-lg font-bold`}>{formatMoney(kasaBakiyeleri[kasa.id] || 0)}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Ana Kasa Toplam ve Harici Toplam */}
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="bg-gradient-to-r from-indigo-500/20 to-violet-500/20 border border-indigo-500/30 rounded-xl p-3">
+                    <p className="text-indigo-400 text-xs mb-1">💼 Ana Kasalar Toplamı</p>
+                    <p className="text-indigo-300 text-xl font-bold">{formatMoney(toplamKasaBakiye)}</p>
+                  </div>
+                  {hariciKasaBakiye !== 0 && (
+                    <div className="bg-gray-500/10 border border-gray-500/30 rounded-xl p-3">
+                      <p className="text-gray-400 text-xs mb-1">📦 Harici Kasalar</p>
+                      <p className="text-gray-300 text-xl font-bold">{formatMoney(hariciKasaBakiye)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Özet Kartları */}
+              <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6">
+                <div className="bg-emerald-500/20 border border-emerald-500/30 rounded-xl p-3 text-center">
+                  <p className="text-emerald-400 text-xs md:text-sm mb-1">Toplam Gelir</p>
+                  <p className="text-emerald-300 text-sm md:text-xl font-bold">{formatMoney(totalIncome)}</p>
+                </div>
+                <div className="bg-rose-500/20 border border-rose-500/30 rounded-xl p-3 text-center">
+                  <p className="text-rose-400 text-xs md:text-sm mb-1">Toplam Gider</p>
+                  <p className="text-rose-300 text-sm md:text-xl font-bold">{formatMoney(totalExpense)}</p>
+                </div>
+                <div className={`${balance >= 0 ? 'bg-violet-500/20 border-violet-500/30' : 'bg-orange-500/20 border-orange-500/30'} border rounded-xl p-3 text-center`}>
+                  <p className={`${balance >= 0 ? 'text-violet-400' : 'text-orange-400'} text-xs md:text-sm mb-1`}>Net Bakiye</p>
+                  <p className={`${balance >= 0 ? 'text-violet-300' : 'text-orange-300'} text-sm md:text-xl font-bold`}>{formatMoney(balance)}</p>
+                </div>
+              </div>
+
+              {/* Transfer Butonu */}
+              <button
+                onClick={() => setShowTransferModal(true)}
+                className="w-full bg-gradient-to-r from-indigo-500/20 to-violet-500/20 border border-indigo-500/30 text-indigo-300 py-3 rounded-xl mb-6 hover:from-indigo-500/30 hover:to-violet-500/30 transition-all no-print"
+              >
+                💱 Kasalar Arası Transfer
+              </button>
+
+              {/* Yeni İşlem Formu */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 md:p-6 mb-6 no-print">
+                <h2 className="text-white text-lg font-semibold mb-4">Yeni İşlem Ekle</h2>
+                
+                {/* Gelir/Gider Seçimi */}
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={() => { setType('gelir'); setCategory(''); }}
+                    className={`flex-1 py-3 rounded-xl font-medium transition-all ${
+                      type === 'gelir' ? 'bg-emerald-500 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                    }`}
+                  >
+                    ↗ Gelir
+                  </button>
+                  <button
+                    onClick={() => { setType('gider'); setCategory(''); }}
+                    className={`flex-1 py-3 rounded-xl font-medium transition-all ${
+                      type === 'gider' ? 'bg-rose-500 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                    }`}
+                  >
+                    ↙ Gider
+                  </button>
+                </div>
+
+                {/* Kategori Seçimi */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-gray-400 text-sm">{type === 'gelir' ? 'Gelir Kategorisi:' : 'Gider Kategorisi:'}</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => type === 'gelir' ? setShowGelirKategoriModal(true) : setShowGiderKategoriModal(true)}
+                        className="text-gray-400 hover:text-gray-300 text-xs transition-all"
+                      >
+                        ✏️ Düzenle
+                      </button>
+                      <button
+                        onClick={() => type === 'gelir' ? setShowGelirKategoriModal(true) : setShowGiderKategoriModal(true)}
+                        className="text-indigo-400 hover:text-indigo-300 text-xs transition-all"
+                      >
+                        + Ekle
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {categories[type].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setCategory(cat)}
+                        className={`px-3 py-2 rounded-lg text-sm transition-all ${
+                          category === cat
+                            ? type === 'gelir' ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500' : 'bg-rose-500/30 text-rose-300 border border-rose-500'
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10 border border-transparent'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Kasa Seçimi (Gelir ve Gider için) - Dinamik */}
+                <div className="mb-4">
+                  <p className="text-gray-400 text-sm mb-2">{type === 'gelir' ? 'Gelir Kasası:' : 'Ödeme Yapılan Kasa:'}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {kasalar.map(kasa => (
+                      <button
+                        key={kasa.id}
+                        onClick={() => setPaymentMethod(kasa.id)}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all flex items-center gap-2 ${
+                          paymentMethod === kasa.id 
+                            ? type === 'gelir' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                        }`}
+                      >
+                        {kasa.icon} {kasa.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tarih Seçimi */}
+                <div className="mb-4">
+                  <label className="text-gray-400 text-sm mb-1 block">Tarih:</label>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+
+                {/* Açıklama, Tutar, Not */}
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Açıklama..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+                  />
+                  <div className="flex gap-3">
+                    <input
+                      type="number"
+                      placeholder="Tutar"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+                    />
+                    <button
+                      onClick={addTransaction}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-3 rounded-xl font-medium transition-all"
+                    >
+                      Ekle
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Not (opsiyonel)..."
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+                  />
+                </div>
+              </div>
+
+              {/* Arama ve Filtreler */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 md:p-6 no-print">
+                <div className="flex flex-col gap-4 mb-4">
+                  <div className="flex gap-2 items-center">
+                    <h2 className="text-white text-lg font-semibold flex-1">İşlem Geçmişi</h2>
+                    <button
+                      onClick={exportToExcel}
+                      className="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-lg text-sm hover:bg-emerald-500/30 transition-all"
+                    >
+                      📤 Excel
+                    </button>
+                  </div>
+                  
+                  {/* Arama */}
+                  <input
+                    type="text"
+                    placeholder="🔍 İşlem ara..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-white/30"
+                  />
+                  
+                  {/* Filtreler */}
+                  <div className="flex flex-wrap gap-2">
+                    {['all', 'gelir', 'gider', 'transfer'].map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setFilterType(f)}
+                        className={`px-3 py-1 rounded-lg text-sm transition-all ${
+                          filterType === f ? 'bg-indigo-500 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                        }`}
+                      >
+                        {f === 'all' ? 'Tümü' : f === 'gelir' ? 'Gelirler' : f === 'gider' ? 'Giderler' : 'Transferler'}
+                      </button>
+                    ))}
+                    <span className="text-gray-600">|</span>
+                    {['all', 'nakit', 'kredikarti'].map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setFilterKasa(f)}
+                        className={`px-3 py-1 rounded-lg text-sm transition-all ${
+                          filterKasa === f 
+                            ? f === 'nakit' ? 'bg-emerald-500 text-white' : f === 'kredikarti' ? 'bg-blue-500 text-white' : 'bg-violet-500 text-white'
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                        }`}
+                      >
+                        {f === 'all' ? 'Tüm Kasalar' : f === 'nakit' ? '💵' : '💳'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* İşlem Listesi */}
+                {filteredTransactions.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">Henüz işlem yok</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {filteredTransactions.map(t => (
+                      <div
+                        key={t.id}
+                        className={`flex items-start justify-between p-4 rounded-xl ${
+                          t.type === 'gelir' ? (t.paymentMethod === 'nakit' ? 'bg-emerald-500/10' : 'bg-blue-500/10')
+                            : t.type === 'gider' ? 'bg-rose-500/10'
+                            : 'bg-violet-500/10'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-white font-medium truncate">{t.description}</p>
+                            {(t.type === 'gelir' || t.type === 'gider') && t.paymentMethod && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                                t.type === 'gelir' 
+                                  ? 'bg-white/10' 
+                                  : t.paymentMethod === 'nakit' ? 'bg-rose-500/20 text-rose-300' : 'bg-rose-500/20 text-rose-300'
+                              }`}>
+                                {t.paymentMethod === 'nakit' ? '💵' : '💳'}
+                              </span>
+                            )}
+                            {(t.type === 'transfer-in' || t.type === 'transfer-out') && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/30 text-violet-300 flex-shrink-0">
+                                💱 Transfer
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-gray-400 text-sm">{t.category} • {t.date}</p>
+                          {t.note && <p className="text-gray-500 text-xs mt-1">📝 {t.note}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 ml-2">
+                          <p className={`font-bold text-right ${
+                            t.type === 'gelir' ? (t.paymentMethod === 'nakit' ? 'text-emerald-400' : 'text-blue-400')
+                              : t.type === 'gider' ? 'text-rose-400'
+                              : t.type === 'transfer-in' ? 'text-violet-400' : 'text-violet-400'
+                          }`}>
+                            {t.type === 'gelir' || t.type === 'transfer-in' ? '+' : '-'}{formatMoney(t.amount)}
+                          </p>
+                          <button
+                            onClick={() => startEdit(t)}
+                            className="text-gray-500 hover:text-blue-400 transition-colors p-1"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => deleteTransaction(t.id)}
+                            className="text-gray-500 hover:text-rose-400 transition-colors p-1"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ==================== CARİ HESAPLAR BÖLÜMÜ ==================== */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 md:p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">👥</span>
+                    <h2 className="text-white text-lg font-semibold">Cari Hesaplar</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowCariModal(true)}
+                      className="bg-white/10 hover:bg-white/20 text-gray-300 px-3 py-2 rounded-xl text-sm transition-all"
+                    >
+                      ✏️ Düzenle
+                    </button>
+                    <button
+                      onClick={() => setShowCariModal(true)}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm transition-all"
+                    >
+                      + Ekle
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cari Özet Kartları */}
+                <div className="grid grid-cols-3 gap-2 md:gap-4 mb-4">
+                  <div className="bg-cyan-500/20 border border-cyan-500/30 rounded-xl p-3 text-center">
+                    <p className="text-cyan-400 text-xs md:text-sm mb-1">Alacak</p>
+                    <p className="text-cyan-300 text-sm md:text-lg font-bold">{formatMoney(totalCariAlacak)}</p>
+                  </div>
+                  <div className="bg-orange-500/20 border border-orange-500/30 rounded-xl p-3 text-center">
+                    <p className="text-orange-400 text-xs md:text-sm mb-1">Borç</p>
+                    <p className="text-orange-300 text-sm md:text-lg font-bold">{formatMoney(totalCariBorc)}</p>
+                  </div>
+                  <div className={`${totalCariBakiye >= 0 ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-rose-500/20 border-rose-500/30'} border rounded-xl p-3 text-center`}>
+                    <p className={`${totalCariBakiye >= 0 ? 'text-emerald-400' : 'text-rose-400'} text-xs md:text-sm mb-1`}>Bakiye</p>
+                    <p className={`${totalCariBakiye >= 0 ? 'text-emerald-300' : 'text-rose-300'} text-sm md:text-lg font-bold`}>{formatMoney(totalCariBakiye)}</p>
+                  </div>
+                </div>
+
+                {/* Yaklaşan Vadeler */}
+                {getYaklasanVadeler().length > 0 && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4">
+                    <p className="text-amber-400 text-sm font-medium mb-2">⏰ Yaklaşan Vadeler</p>
+                    <div className="space-y-2">
+                      {getYaklasanVadeler().slice(0, 3).map(v => (
+                        <div key={v.id} className="flex justify-between items-center text-sm">
+                          <span className="text-gray-300">{v.cariName}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-amber-400">{formatMoney(v.amount)}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              v.diffDays === 0 ? 'bg-rose-500 text-white' : 
+                              v.diffDays <= 3 ? 'bg-amber-500 text-white' : 'bg-gray-600 text-gray-300'
+                            }`}>
+                              {v.diffDays === 0 ? 'BUGÜN' : `${v.diffDays} gün`}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Cari Hesap Listesi */}
+                {cariHesaplar.length === 0 ? (
+                  <p className="text-gray-500 text-center py-6">Henüz cari hesap yok</p>
+                ) : (
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {cariHesaplar.map(cari => {
+                      const balance = getCariBalance(cari.id);
+                      return (
+                        <div
+                          key={cari.id}
+                          onClick={() => { setSelectedCari(cari); setShowCariDetailModal(true); }}
+                          className="flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer transition-all"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              cari.type === 'firma' ? 'bg-blue-500/20 text-blue-400' : 
+                              cari.type === 'kisi' ? 'bg-purple-500/20 text-purple-400' : 'bg-gray-500/20 text-gray-400'
+                            }`}>
+                              {cari.type === 'firma' ? '🏢' : cari.type === 'kisi' ? '👤' : '📁'}
+                            </div>
+                            <div>
+                              <p className="text-white font-medium">{cari.name}</p>
+                              <p className="text-gray-500 text-xs">
+                                {cari.type === 'firma' ? 'Firma' : cari.type === 'kisi' ? 'Kişi' : 'Diğer'}
+                                {cari.phone && ` • ${cari.phone}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`font-bold ${balance.bakiye >= 0 ? 'text-cyan-400' : 'text-orange-400'}`}>
+                              {balance.bakiye >= 0 ? '+' : ''}{formatMoney(balance.bakiye)}
+                            </p>
+                            <p className="text-gray-500 text-xs">
+                              {balance.bakiye >= 0 ? 'Alacak' : 'Borç'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+            )}
+
+            {/* ==================== ÖZET TAB ==================== */}
+            {activeTab === 'ozet' && (
+            <>
+              {/* Bugün */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+                <h2 className="text-white text-xl font-semibold mb-4">📅 Bugün <span className="text-gray-400 text-sm font-normal">({getTodayString()})</span></h2>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-emerald-500/20 rounded-xl p-3 text-center">
+                    <p className="text-emerald-400 text-sm">Gelir</p>
+                    <p className="text-emerald-300 text-xl font-bold">{formatMoney(todayIncome)}</p>
+                  </div>
+                  <div className="bg-rose-500/20 rounded-xl p-3 text-center">
+                    <p className="text-rose-400 text-sm">Gider</p>
+                    <p className="text-rose-300 text-xl font-bold">{formatMoney(todayExpense)}</p>
+                  </div>
+                  <div className={`${todayIncome - todayExpense >= 0 ? 'bg-violet-500/20' : 'bg-orange-500/20'} rounded-xl p-3 text-center`}>
+                    <p className={`${todayIncome - todayExpense >= 0 ? 'text-violet-400' : 'text-orange-400'} text-sm`}>Net</p>
+                    <p className={`${todayIncome - todayExpense >= 0 ? 'text-violet-300' : 'text-orange-300'} text-xl font-bold`}>{formatMoney(todayIncome - todayExpense)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dönem Seçimi ve Özet */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+                {/* Dönem Seçim Butonları */}
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <button
+                    onClick={() => setOzetViewMode('month')}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                      ozetViewMode === 'month' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                    }`}
+                  >
+                    🗓️ Bu Ay
+                  </button>
+                  <button
+                    onClick={() => setOzetViewMode('custom')}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                      ozetViewMode === 'custom' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                    }`}
+                  >
+                    📆 Tarih Aralığı
+                  </button>
+                  
+                  {ozetViewMode === 'custom' && (
+                    <div className="flex items-center gap-2 ml-2">
+                      <input
+                        type="date"
+                        value={ozetStartDate}
+                        onChange={(e) => setOzetStartDate(e.target.value)}
+                        className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                      />
+                      <span className="text-gray-500">-</span>
+                      <input
+                        type="date"
+                        value={ozetEndDate}
+                        onChange={(e) => setOzetEndDate(e.target.value)}
+                        className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Dönem Başlığı */}
+                <h2 className="text-white text-xl font-semibold mb-4">
+                  {ozetViewMode === 'month' ? (
+                    <>🗓️ Bu Ay <span className="text-gray-400 text-sm font-normal">({new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })})</span></>
+                  ) : (
+                    <>📆 Seçili Dönem <span className="text-gray-400 text-sm font-normal">
+                      {ozetStartDate && ozetEndDate ? `(${formatDateTR(ozetStartDate)} - ${formatDateTR(ozetEndDate)})` : '(Tarih seçin)'}
+                    </span></>
+                  )}
+                </h2>
+
+                {/* İstatistikler */}
+                {(() => {
+                  let filteredTx;
+                  if (ozetViewMode === 'month') {
+                    filteredTx = monthTransactions;
+                  } else {
+                    filteredTx = transactions.filter(t => isInDateRange(t.date, ozetStartDate, ozetEndDate));
+                  }
+                  const periodIncome = filteredTx.filter(t => t.type === 'gelir').reduce((s, t) => s + t.amount, 0);
+                  const periodExpense = filteredTx.filter(t => t.type === 'gider').reduce((s, t) => s + t.amount, 0);
+                  const periodIncomeNakit = filteredTx.filter(t => t.type === 'gelir' && t.paymentMethod === 'nakit').reduce((s, t) => s + t.amount, 0);
+                  const periodIncomeKrediKarti = filteredTx.filter(t => t.type === 'gelir' && t.paymentMethod === 'kredikarti').reduce((s, t) => s + t.amount, 0);
+                  
+                  const periodExpenseByCategory = categories.gider.map(cat => ({
+                    category: cat,
+                    amount: filteredTx.filter(t => t.type === 'gider' && t.category === cat).reduce((s, t) => s + t.amount, 0)
+                  })).filter(item => item.amount > 0).sort((a, b) => b.amount - a.amount);
+                  
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="bg-emerald-500/10 rounded-xl p-3">
+                          <p className="text-emerald-400 text-sm">💵 Nakit Gelir</p>
+                          <p className="text-emerald-300 text-lg font-bold">{formatMoney(periodIncomeNakit)}</p>
+                        </div>
+                        <div className="bg-blue-500/10 rounded-xl p-3">
+                          <p className="text-blue-400 text-sm">💳 Kredi Kartı Gelir</p>
+                          <p className="text-blue-300 text-lg font-bold">{formatMoney(periodIncomeKrediKarti)}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 mb-4">
+                        <div className="bg-emerald-500/20 rounded-xl p-3 text-center">
+                          <p className="text-emerald-400 text-sm">Toplam Gelir</p>
+                          <p className="text-emerald-300 text-xl font-bold">{formatMoney(periodIncome)}</p>
+                        </div>
+                        <div className="bg-rose-500/20 rounded-xl p-3 text-center">
+                          <p className="text-rose-400 text-sm">Toplam Gider</p>
+                          <p className="text-rose-300 text-xl font-bold">{formatMoney(periodExpense)}</p>
+                        </div>
+                        <div className={`${periodIncome - periodExpense >= 0 ? 'bg-violet-500/20' : 'bg-orange-500/20'} rounded-xl p-3 text-center`}>
+                          <p className={`${periodIncome - periodExpense >= 0 ? 'text-violet-400' : 'text-orange-400'} text-sm`}>Net Bakiye</p>
+                          <p className={`${periodIncome - periodExpense >= 0 ? 'text-violet-300' : 'text-orange-300'} text-xl font-bold`}>{formatMoney(periodIncome - periodExpense)}</p>
+                        </div>
+                      </div>
+                      
+                      {periodExpenseByCategory.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-white/10">
+                          <p className="text-gray-400 text-sm mb-3">Gider Dağılımı:</p>
+                          <div className="space-y-2">
+                            {periodExpenseByCategory.map(item => (
+                              <div key={item.category} className="flex items-center justify-between">
+                                <span className="text-gray-300 text-sm">{item.category}</span>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-24 md:w-32 h-2 bg-white/10 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-rose-500 rounded-full" 
+                                      style={{ width: `${Math.min(100, (item.amount / periodExpense) * 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-rose-400 text-sm font-medium w-24 text-right">{formatMoney(item.amount)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Tarih Aralığı Sorgula - eski */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 no-print">
+                <h2 className="text-white text-xl font-semibold mb-4">🔍 Tarih Aralığı Sorgula</h2>
+                <div className="flex gap-3 mb-4 flex-wrap">
+                  <div className="flex-1 min-w-[140px]">
+                    <label className="text-gray-400 text-sm mb-1 block">Başlangıç</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[140px]">
+                    <label className="text-gray-400 text-sm mb-1 block">Bitiş</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      onClick={() => { setStartDate(''); setEndDate(''); }}
+                      className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-3 rounded-xl transition-all"
+                    >
+                      Temizle
+                    </button>
+                  </div>
+                </div>
+
+                {(startDate || endDate) ? (
+                  <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-4">
+                    <p className="text-indigo-300 text-sm mb-3">
+                      {startDate && endDate ? `${formatDateTR(startDate)} - ${formatDateTR(endDate)}` : 
+                       startDate ? `${formatDateTR(startDate)} ve sonrası` : `${formatDateTR(endDate)} ve öncesi`}
+                      <span className="text-gray-500 ml-2">({rangeTransactions.length} işlem)</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="bg-emerald-500/10 rounded-lg p-2">
+                        <p className="text-emerald-400 text-xs">💵 Nakit</p>
+                        <p className="text-emerald-300 font-bold">{formatMoney(rangeIncomeNakit)}</p>
+                      </div>
+                      <div className="bg-blue-500/10 rounded-lg p-2">
+                        <p className="text-blue-400 text-xs">💳 K.Kartı</p>
+                        <p className="text-blue-300 font-bold">{formatMoney(rangeIncomeKrediKarti)}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="text-center">
+                        <p className="text-emerald-400 text-xs">Gelir</p>
+                        <p className="text-emerald-300 font-bold">{formatMoney(rangeIncome)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-rose-400 text-xs">Gider</p>
+                        <p className="text-rose-300 font-bold">{formatMoney(rangeExpense)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className={`${rangeIncome - rangeExpense >= 0 ? 'text-violet-400' : 'text-orange-400'} text-xs`}>Bakiye</p>
+                        <p className={`${rangeIncome - rangeExpense >= 0 ? 'text-violet-300' : 'text-orange-300'} font-bold`}>{formatMoney(rangeIncome - rangeExpense)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">Tarih aralığı seçerek sorgulama yapabilirsiniz</p>
+                )}
+              </div>
+
+              {/* Tüm Zamanlar */}
+              <div className="bg-gradient-to-r from-indigo-500/20 to-violet-500/20 border border-indigo-500/30 rounded-2xl p-6 mt-6">
+                <h2 className="text-white text-xl font-semibold mb-4">💎 Tüm Zamanlar</h2>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-white/5 rounded-xl p-3">
+                    <p className="text-emerald-400 text-sm">💵 Nakit Kasa</p>
+                    <p className="text-emerald-300 text-xl font-bold">{formatMoney(nakitKasa)}</p>
+                  </div>
+                  <div className="bg-white/5 rounded-xl p-3">
+                    <p className="text-blue-400 text-sm">💳 K.Kartı Kasa</p>
+                    <p className="text-blue-300 text-xl font-bold">{formatMoney(krediKartiKasa)}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <p className="text-emerald-400">Toplam Gelir</p>
+                    <p className="text-emerald-300 text-2xl font-bold">{formatMoney(totalIncome)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-rose-400">Toplam Gider</p>
+                    <p className="text-rose-300 text-2xl font-bold">{formatMoney(totalExpense)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className={`${balance >= 0 ? 'text-violet-400' : 'text-orange-400'}`}>Net Bakiye</p>
+                    <p className={`${balance >= 0 ? 'text-violet-300' : 'text-orange-300'} text-2xl font-bold`}>{formatMoney(balance)}</p>
+                  </div>
+                </div>
+              </div>
+            </>
+            )}
+
+            {/* ==================== GRAFİKLER TAB ==================== */}
+            {activeTab === 'grafikler' && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+                <h2 className="text-white text-xl font-semibold mb-4">📈 Son 6 Ay Gelir-Gider Karşılaştırması</h2>
+                <div className="h-80">
+                  <canvas ref={chartRef}></canvas>
+                </div>
+              </div>
+            )}
+
+            {/* ==================== HATIRLATICILAR TAB ==================== */}
+            {activeTab === 'hatirlatici' && (
+            <>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-white text-xl font-semibold">🔔 Hatırlatıcılar</h2>
+                  <button
+                    onClick={() => setShowReminderModal(true)}
+                    className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm transition-all"
+                  >
+                    + Yeni Hatırlatıcı
+                  </button>
+                </div>
+                
+                {reminders.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">Henüz hatırlatıcı yok</p>
+                ) : (
+                  <div className="space-y-3">
+                    {reminders.map(r => (
+                      <div key={r.id} className="flex items-center justify-between p-4 bg-amber-500/10 rounded-xl">
+                        <div>
+                          <p className="text-white font-medium">{r.title}</p>
+                          <p className="text-gray-400 text-sm">Her ayın {r.day}. günü • {r.category}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-amber-400 font-bold">{formatMoney(r.amount)}</p>
+                          <button
+                            onClick={() => deleteReminder(r.id)}
+                            className="text-gray-500 hover:text-rose-400 transition-colors"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-2xl p-6">
+                <h3 className="text-amber-400 font-semibold mb-2">💡 Hatırlatıcılar Nasıl Çalışır?</h3>
+                <p className="text-gray-400 text-sm">
+                  Belirlediğiniz günde uygulama açıkken size bildirim gösterilir. 
+                  Örneğin kira ödemesi için her ayın 1'i, elektrik faturası için 15'i gibi.
+                </p>
+              </div>
+            </>
+            )}
+
+            {/* ==================== MODALLER ==================== */}
+            
+            {/* Düzenleme Modal */}
+            <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="İşlem Düzenle">
+              {editingTransaction && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Açıklama</label>
+                    <input
+                      type="text"
+                      value={editingTransaction.description}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, description: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Tutar</label>
+                    <input
+                      type="number"
+                      value={editingTransaction.amount}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, amount: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Tarih</label>
+                    <input
+                      type="date"
+                      value={editingTransaction.date}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, date: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Not</label>
+                    <input
+                      type="text"
+                      value={editingTransaction.note || ''}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, note: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
+                  <button
+                    onClick={saveEdit}
+                    className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-medium transition-all"
+                  >
+                    Kaydet
+                  </button>
+                </div>
+              )}
+            </Modal>
+
+            {/* Transfer Modal */}
+            <Modal isOpen={showTransferModal} onClose={() => setShowTransferModal(false)} title="💱 Kasalar Arası Transfer">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-gray-400 text-sm mb-2 block">Nereden:</label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setTransferFrom('nakit')}
+                      className={`flex-1 py-3 rounded-xl font-medium transition-all ${
+                        transferFrom === 'nakit' ? 'bg-emerald-600 text-white' : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      💵 Nakit Kasa
+                    </button>
+                    <button
+                      onClick={() => setTransferFrom('kredikarti')}
+                      className={`flex-1 py-3 rounded-xl font-medium transition-all ${
+                        transferFrom === 'kredikarti' ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      💳 K.Kartı Kasa
+                    </button>
+                  </div>
+                </div>
+                <div className="text-center text-gray-400">↓</div>
+                <div className="text-center">
+                  <span className={`px-4 py-2 rounded-xl ${transferFrom === 'nakit' ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                    {transferFrom === 'nakit' ? '💳 Kredi Kartı Kasası' : '💵 Nakit Kasa'}
+                  </span>
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Tutar</label>
+                  <input
+                    type="number"
+                    placeholder="Transfer tutarı"
+                    value={transferAmount}
+                    onChange={(e) => setTransferAmount(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Not (opsiyonel)</label>
+                  <input
+                    type="text"
+                    placeholder="Transfer notu"
+                    value={transferNote}
+                    onChange={(e) => setTransferNote(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <button
+                  onClick={handleTransfer}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-medium transition-all"
+                >
+                  Transfer Yap
+                </button>
+              </div>
+            </Modal>
+
+            {/* Hatırlatıcı Modal */}
+            <Modal isOpen={showReminderModal} onClose={() => setShowReminderModal(false)} title="🔔 Yeni Hatırlatıcı">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Başlık</label>
+                  <input
+                    type="text"
+                    placeholder="Örn: Kira Ödemesi"
+                    value={newReminder.title}
+                    onChange={(e) => setNewReminder({...newReminder, title: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Tutar</label>
+                  <input
+                    type="number"
+                    placeholder="Tutar"
+                    value={newReminder.amount}
+                    onChange={(e) => setNewReminder({...newReminder, amount: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Kategori</label>
+                  <select
+                    value={newReminder.category}
+                    onChange={(e) => setNewReminder({...newReminder, category: e.target.value})}
+                    className="w-full bg-slate-700 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  >
+                    {categories.gider.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Her ayın kaçında?</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={newReminder.day}
+                    onChange={(e) => setNewReminder({...newReminder, day: parseInt(e.target.value) || 1})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <button
+                  onClick={() => { addReminder(); setShowReminderModal(false); }}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-medium transition-all"
+                >
+                  Hatırlatıcı Ekle
+                </button>
+              </div>
+            </Modal>
+
+            {/* Yedekleme Modal */}
+            <Modal isOpen={showBackupModal} onClose={() => setShowBackupModal(false)} title="💾 Yedekleme & Geri Yükleme">
+              <div className="space-y-4">
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
+                  <h3 className="text-emerald-400 font-semibold mb-2">📤 Yedek Al</h3>
+                  <p className="text-gray-400 text-sm mb-3">Tüm verilerinizi JSON dosyası olarak indirin.</p>
+                  <button
+                    onClick={backupData}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-xl transition-all"
+                  >
+                    Yedek İndir
+                  </button>
+                </div>
+                
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <h3 className="text-blue-400 font-semibold mb-2">📥 Geri Yükle</h3>
+                  <p className="text-gray-400 text-sm mb-3">Daha önce aldığınız yedeği geri yükleyin.</p>
+                  <label className="block w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-xl transition-all text-center cursor-pointer">
+                    Yedek Dosyası Seç
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={restoreData}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                  <h3 className="text-amber-400 font-semibold mb-2">📤 Excel'e Aktar</h3>
+                  <p className="text-gray-400 text-sm mb-3">Verilerinizi Excel formatında indirin.</p>
+                  <button
+                    onClick={exportToExcel}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl transition-all"
+                  >
+                    Excel İndir
+                  </button>
+                </div>
+
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4">
+                  <h3 className="text-rose-400 font-semibold mb-2">🗑️ Tüm Verileri Sil</h3>
+                  <p className="text-gray-400 text-sm mb-3">Dikkat! Bu işlem geri alınamaz.</p>
+                  <button
+                    onClick={() => {
+                      if (confirm('TÜM VERİLER SİLİNECEK! Emin misiniz?')) {
+                        setTransactions([]);
+                        setReminders([]);
+                        setCariHesaplar([]);
+                        setCariIslemler([]);
+                        showToast('Tüm veriler silindi', 'info');
+                        setShowBackupModal(false);
+                      }
+                    }}
+                    className="w-full bg-rose-500 hover:bg-rose-600 text-white py-2 rounded-xl transition-all"
+                  >
+                    Tüm Verileri Sil
+                  </button>
+                </div>
+              </div>
+            </Modal>
+
+            {/* ==================== CARİ HESAP MODALLARI ==================== */}
+            
+            {/* Yeni Cari Hesap Modal */}
+            <Modal isOpen={showCariModal} onClose={() => setShowCariModal(false)} title="👥 Yeni Cari Hesap">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Hesap Adı *</label>
+                  <input
+                    type="text"
+                    placeholder="Firma veya kişi adı"
+                    value={newCari.name}
+                    onChange={(e) => setNewCari({...newCari, name: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-2 block">Hesap Türü</label>
+                  <div className="flex gap-2">
+                    {[
+                      { id: 'firma', icon: '🏢', label: 'Firma' },
+                      { id: 'kisi', icon: '👤', label: 'Kişi' },
+                      { id: 'diger', icon: '📁', label: 'Diğer' }
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setNewCari({...newCari, type: t.id})}
+                        className={`flex-1 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                          newCari.type === t.id ? 'bg-indigo-500 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                        }`}
+                      >
+                        {t.icon} {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Telefon (opsiyonel)</label>
+                  <input
+                    type="tel"
+                    placeholder="05xx xxx xx xx"
+                    value={newCari.phone}
+                    onChange={(e) => setNewCari({...newCari, phone: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Not (opsiyonel)</label>
+                  <input
+                    type="text"
+                    placeholder="Açıklama veya not"
+                    value={newCari.note}
+                    onChange={(e) => setNewCari({...newCari, note: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <button
+                  onClick={addCariHesap}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-medium transition-all"
+                >
+                  Cari Hesap Oluştur
+                </button>
+              </div>
+            </Modal>
+
+            {/* Cari Hesap Detay Modal */}
+            <Modal isOpen={showCariDetailModal} onClose={() => { setShowCariDetailModal(false); setEditingCari(null); }} title={selectedCari ? `${selectedCari.name}` : 'Cari Detay'}>
+              {selectedCari && (
+                <div className="space-y-4">
+                  {/* Cari Bilgileri */}
+                  <div className="bg-white/5 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                          selectedCari.type === 'firma' ? 'bg-blue-500/20 text-blue-400' : 
+                          selectedCari.type === 'kisi' ? 'bg-purple-500/20 text-purple-400' : 'bg-gray-500/20 text-gray-400'
+                        }`}>
+                          {selectedCari.type === 'firma' ? '🏢' : selectedCari.type === 'kisi' ? '👤' : '📁'}
+                        </div>
+                        <div>
+                          <p className="text-white font-semibold">{selectedCari.name}</p>
+                          <p className="text-gray-500 text-sm">
+                            {selectedCari.type === 'firma' ? 'Firma' : selectedCari.type === 'kisi' ? 'Kişi' : 'Diğer'}
+                            {selectedCari.phone && ` • ${selectedCari.phone}`}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setEditingCari({...selectedCari})}
+                        className="text-gray-500 hover:text-blue-400 transition-colors p-2"
+                      >
+                        ✏️
+                      </button>
+                    </div>
+                    {selectedCari.note && <p className="text-gray-400 text-sm">📝 {selectedCari.note}</p>}
+                  </div>
+
+                  {/* Düzenleme Formu */}
+                  {editingCari && (
+                    <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-4 space-y-3">
+                      <p className="text-indigo-400 font-medium text-sm">Cari Hesabı Düzenle</p>
+                      <input
+                        type="text"
+                        placeholder="Hesap Adı"
+                        value={editingCari.name}
+                        onChange={(e) => setEditingCari({...editingCari, name: e.target.value})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex gap-2">
+                        {['firma', 'kisi', 'diger'].map(t => (
+                          <button
+                            key={t}
+                            onClick={() => setEditingCari({...editingCari, type: t})}
+                            className={`flex-1 py-2 rounded-lg text-sm transition-all ${
+                              editingCari.type === t ? 'bg-indigo-500 text-white' : 'bg-white/5 text-gray-400'
+                            }`}
+                          >
+                            {t === 'firma' ? '🏢' : t === 'kisi' ? '👤' : '📁'}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="tel"
+                        placeholder="Telefon"
+                        value={editingCari.phone || ''}
+                        onChange={(e) => setEditingCari({...editingCari, phone: e.target.value})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Not"
+                        value={editingCari.note || ''}
+                        onChange={(e) => setEditingCari({...editingCari, note: e.target.value})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setEditingCari(null)}
+                          className="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-2 rounded-xl transition-all"
+                        >
+                          İptal
+                        </button>
+                        <button
+                          onClick={() => { updateCariHesap(); setSelectedCari(editingCari); }}
+                          className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-xl transition-all"
+                        >
+                          Kaydet
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bakiye Özeti */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-cyan-500/20 rounded-xl p-3 text-center">
+                      <p className="text-cyan-400 text-xs">Alacak</p>
+                      <p className="text-cyan-300 font-bold">{formatMoney(getCariBalance(selectedCari.id).alacak)}</p>
+                    </div>
+                    <div className="bg-orange-500/20 rounded-xl p-3 text-center">
+                      <p className="text-orange-400 text-xs">Borç</p>
+                      <p className="text-orange-300 font-bold">{formatMoney(getCariBalance(selectedCari.id).borc)}</p>
+                    </div>
+                    <div className={`${getCariBalance(selectedCari.id).bakiye >= 0 ? 'bg-emerald-500/20' : 'bg-rose-500/20'} rounded-xl p-3 text-center`}>
+                      <p className={`${getCariBalance(selectedCari.id).bakiye >= 0 ? 'text-emerald-400' : 'text-rose-400'} text-xs`}>Bakiye</p>
+                      <p className={`${getCariBalance(selectedCari.id).bakiye >= 0 ? 'text-emerald-300' : 'text-rose-300'} font-bold`}>
+                        {formatMoney(getCariBalance(selectedCari.id).bakiye)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* İşlem Ekle Butonları */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setNewCariIslem({...newCariIslem, type: 'alacak'}); setShowCariIslemModal(true); }}
+                      className="flex-1 bg-cyan-500 hover:bg-cyan-600 text-white py-3 rounded-xl font-medium transition-all"
+                    >
+                      + Alacak Ekle
+                    </button>
+                    <button
+                      onClick={() => { setNewCariIslem({...newCariIslem, type: 'borc'}); setShowCariIslemModal(true); }}
+                      className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-medium transition-all"
+                    >
+                      + Borç Ekle
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setNewCariIslem({...newCariIslem, type: 'odeme'}); setShowCariIslemModal(true); }}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-medium transition-all"
+                  >
+                    💵 Ödeme Al / Yap
+                  </button>
+
+                  {/* İşlem Geçmişi */}
+                  <div>
+                    <p className="text-gray-400 text-sm mb-2">İşlem Geçmişi</p>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {cariIslemler.filter(i => i.cariId === selectedCari.id).length === 0 ? (
+                        <p className="text-gray-500 text-center py-4">Henüz işlem yok</p>
+                      ) : (
+                        cariIslemler.filter(i => i.cariId === selectedCari.id).map(islem => (
+                          <div key={islem.id} className={`flex items-center justify-between p-3 rounded-xl ${
+                            islem.type === 'alacak' ? 'bg-cyan-500/10' : 
+                            islem.type === 'borc' ? 'bg-orange-500/10' : 'bg-emerald-500/10'
+                          }`}>
+                            <div>
+                              <p className="text-white text-sm">
+                                {islem.type === 'alacak' ? '📥 Alacak' : islem.type === 'borc' ? '📤 Borç' : '💵 Ödeme'}
+                                {islem.description && ` - ${islem.description}`}
+                              </p>
+                              <p className="text-gray-500 text-xs">
+                                {islem.date}
+                                {islem.vade && ` • Vade: ${formatDateTR(islem.vade)}`}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <p className={`font-bold ${
+                                islem.type === 'alacak' ? 'text-cyan-400' : 
+                                islem.type === 'borc' ? 'text-orange-400' : 'text-emerald-400'
+                              }`}>
+                                {islem.type === 'alacak' ? '+' : '-'}{formatMoney(islem.amount)}
+                              </p>
+                              <button
+                                onClick={() => deleteCariIslem(islem.id)}
+                                className="text-gray-500 hover:text-rose-400 transition-colors"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sil Butonu */}
+                  <button
+                    onClick={() => deleteCariHesap(selectedCari.id)}
+                    className="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 py-3 rounded-xl font-medium transition-all"
+                  >
+                    🗑️ Cari Hesabı Sil
+                  </button>
+                </div>
+              )}
+            </Modal>
+
+            {/* Cari İşlem Ekle Modal */}
+            <Modal isOpen={showCariIslemModal} onClose={() => setShowCariIslemModal(false)} title={
+              newCariIslem.type === 'alacak' ? '📥 Alacak Ekle' : 
+              newCariIslem.type === 'borc' ? '📤 Borç Ekle' : '💵 Ödeme Al / Yap'
+            }>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Tutar *</label>
+                  <input
+                    type="number"
+                    placeholder="Tutar girin"
+                    value={newCariIslem.amount}
+                    onChange={(e) => setNewCariIslem({...newCariIslem, amount: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Açıklama (opsiyonel)</label>
+                  <input
+                    type="text"
+                    placeholder="İşlem açıklaması"
+                    value={newCariIslem.description}
+                    onChange={(e) => setNewCariIslem({...newCariIslem, description: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+                {newCariIslem.type !== 'odeme' && (
+                  <>
+                    <div>
+                      <label className="text-gray-400 text-sm mb-1 block">Vade Tarihi (opsiyonel)</label>
+                      <input
+                        type="date"
+                        value={newCariIslem.vade}
+                        onChange={(e) => setNewCariIslem({...newCariIslem, vade: e.target.value})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                    <div className={`flex items-center gap-3 p-3 rounded-xl transition-all ${newCariIslem.hatirlatici ? 'bg-amber-500/20 border border-amber-500/30' : 'bg-white/5'}`}>
+                      <input
+                        type="checkbox"
+                        id="hatirlatici"
+                        checked={newCariIslem.hatirlatici}
+                        onChange={(e) => setNewCariIslem({...newCariIslem, hatirlatici: e.target.checked})}
+                        className="w-5 h-5 rounded accent-amber-500"
+                      />
+                      <label htmlFor="hatirlatici" className={`text-sm ${newCariIslem.hatirlatici ? 'text-amber-400' : 'text-gray-400'}`}>
+                        🔔 Vade yaklaşınca hatırlat (3 gün önce bildirim)
+                      </label>
+                    </div>
+                  </>
+                )}
+                <button
+                  onClick={addCariIslem}
+                  className={`w-full py-3 rounded-xl font-medium transition-all text-white ${
+                    newCariIslem.type === 'alacak' ? 'bg-cyan-500 hover:bg-cyan-600' : 
+                    newCariIslem.type === 'borc' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                  }`}
+                >
+                  {newCariIslem.type === 'alacak' ? 'Alacak Ekle' : 
+                   newCariIslem.type === 'borc' ? 'Borç Ekle' : 'Ödeme Kaydet'}
+                </button>
+              </div>
+            </Modal>
+
+            {/* ==================== KASA EKLEME MODAL ==================== */}
+            <Modal isOpen={showKasaModal} onClose={() => { setShowKasaModal(false); setEditingKasa(null); setNewKasaName(''); setNewKasaIsMain(true); }} title="🏦 Kasaları Yönet">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Yeni Kasa Adı</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Örn: Döviz Hesabı, Yastık Altı..."
+                      value={newKasaName}
+                      onChange={(e) => setNewKasaName(e.target.value)}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                    <button
+                      onClick={addKasa}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-3 rounded-xl font-medium transition-all"
+                    >
+                      Ekle
+                    </button>
+                  </div>
+                  {/* Ana Kasaya Dahil Checkbox */}
+                  <label className="flex items-center gap-3 mt-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newKasaIsMain}
+                      onChange={(e) => setNewKasaIsMain(e.target.checked)}
+                      className="w-5 h-5 rounded accent-emerald-500"
+                    />
+                    <span className="text-gray-300 text-sm">Ana kasaya dahil et (toplam bakiyeye eklensin)</span>
+                  </label>
+                </div>
+
+                {/* Bilgi */}
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3">
+                  <p className="text-blue-400 text-xs">
+                    💡 "Ana kasaya dahil" seçili olmayan kasalar toplam bakiyeye dahil edilmez, ayrı takip edilir.
+                  </p>
+                </div>
+                
+                {/* Mevcut Kasalar */}
+                <div className="border-t border-white/10 pt-4">
+                  <p className="text-gray-400 text-sm mb-3">Mevcut Kasalar:</p>
+                  <div className="space-y-2">
+                    {kasalar.map(kasa => (
+                      <div key={kasa.id} className={`flex items-center justify-between p-3 rounded-xl ${kasa.isMainKasa !== false ? 'bg-white/5' : 'bg-amber-500/10 border border-amber-500/30'}`}>
+                        {editingKasa === kasa.id ? (
+                          <input
+                            type="text"
+                            defaultValue={kasa.name}
+                            onBlur={(e) => updateKasa(kasa.id, e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && updateKasa(kasa.id, e.target.value)}
+                            autoFocus
+                            className="flex-1 bg-white/10 border border-indigo-500 rounded-lg px-3 py-1 text-white focus:outline-none mr-2"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span>{kasa.icon}</span>
+                            <div>
+                              <span className="text-white">{kasa.name}</span>
+                              {kasa.isMainKasa === false && (
+                                <span className="ml-2 text-xs text-amber-400">(Harici)</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400 text-sm">{formatMoney(kasaBakiyeleri[kasa.id] || 0)}</span>
+                          {kasa.id !== 'nakit' && kasa.id !== 'kredikarti' && (
+                            <>
+                              <button
+                                onClick={() => toggleKasaMain(kasa.id)}
+                                className={`text-sm px-2 py-1 rounded ${kasa.isMainKasa !== false ? 'text-emerald-400 hover:bg-emerald-500/20' : 'text-amber-400 hover:bg-amber-500/20'}`}
+                                title={kasa.isMainKasa !== false ? 'Ana kasadan çıkar' : 'Ana kasaya dahil et'}
+                              >
+                                {kasa.isMainKasa !== false ? '✓' : '○'}
+                              </button>
+                              <button
+                                onClick={() => setEditingKasa(editingKasa === kasa.id ? null : kasa.id)}
+                                className="text-gray-500 hover:text-blue-400 transition-colors"
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                onClick={() => deleteKasa(kasa.id)}
+                                className="text-gray-500 hover:text-rose-400 transition-colors"
+                              >
+                                🗑️
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Modal>
+
+            {/* ==================== GİDER KATEGORİSİ MODAL ==================== */}
+            <Modal isOpen={showGiderKategoriModal} onClose={() => { setShowGiderKategoriModal(false); setEditingGiderKat(null); }} title="📂 Gider Kategorileri">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Yeni Kategori Adı</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Örn: Kira, Sigorta, Vergi..."
+                      value={newGiderKategori}
+                      onChange={(e) => setNewGiderKategori(e.target.value)}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                    <button
+                      onClick={addGiderKategori}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-3 rounded-xl font-medium transition-all"
+                    >
+                      Ekle
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Mevcut Kategoriler */}
+                <div className="border-t border-white/10 pt-4">
+                  <p className="text-gray-400 text-sm mb-3">Mevcut Gider Kategorileri:</p>
+                  <div className="space-y-2">
+                    {giderKategorileri.map(kat => (
+                      <div key={kat} className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+                        {editingGiderKat === kat ? (
+                          <input
+                            type="text"
+                            defaultValue={kat}
+                            onBlur={(e) => updateGiderKategori(kat, e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && updateGiderKategori(kat, e.target.value)}
+                            autoFocus
+                            className="flex-1 bg-white/10 border border-indigo-500 rounded-lg px-3 py-1 text-white focus:outline-none mr-2"
+                          />
+                        ) : (
+                          <span className="text-white">{kat}</span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setEditingGiderKat(editingGiderKat === kat ? null : kat)}
+                            className="text-gray-500 hover:text-blue-400 transition-colors"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => deleteGiderKategori(kat)}
+                            className="text-gray-500 hover:text-rose-400 transition-colors"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Modal>
+
+            {/* ==================== GELİR KATEGORİSİ MODAL ==================== */}
+            <Modal isOpen={showGelirKategoriModal} onClose={() => { setShowGelirKategoriModal(false); setEditingGelirKat(null); }} title="📂 Gelir Kategorileri">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-gray-400 text-sm mb-1 block">Yeni Kategori Adı</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Örn: Danışmanlık, Muayene..."
+                      value={newGelirKategori}
+                      onChange={(e) => setNewGelirKategori(e.target.value)}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30"
+                    />
+                    <button
+                      onClick={addGelirKategori}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-3 rounded-xl font-medium transition-all"
+                    >
+                      Ekle
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Mevcut Kategoriler */}
+                <div className="border-t border-white/10 pt-4">
+                  <p className="text-gray-400 text-sm mb-3">Mevcut Gelir Kategorileri:</p>
+                  <div className="space-y-2">
+                    {gelirKategorileri.map(kat => (
+                      <div key={kat} className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+                        {editingGelirKat === kat ? (
+                          <input
+                            type="text"
+                            defaultValue={kat}
+                            onBlur={(e) => updateGelirKategori(kat, e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && updateGelirKategori(kat, e.target.value)}
+                            autoFocus
+                            className="flex-1 bg-white/10 border border-emerald-500 rounded-lg px-3 py-1 text-white focus:outline-none mr-2"
+                          />
+                        ) : (
+                          <span className="text-white">{kat}</span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setEditingGelirKat(editingGelirKat === kat ? null : kat)}
+                            className="text-gray-500 hover:text-blue-400 transition-colors"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => deleteGelirKategori(kat)}
+                            className="text-gray-500 hover:text-rose-400 transition-colors"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Modal>
+
+            {/* ==================== BULUT SYNC MODAL ==================== */}
+            <Modal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} title="☁️ Bulut Senkronizasyon">
+              <div className="space-y-4">
+                {/* Durum */}
+                <div className={`rounded-xl p-4 ${syncEnabled ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-white/5'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-300">Durum:</span>
+                    <span className={`flex items-center gap-2 ${syncEnabled ? 'text-emerald-400' : 'text-gray-500'}`}>
+                      <span className={`w-2 h-2 rounded-full ${syncEnabled ? 'bg-emerald-400' : 'bg-gray-500'}`}></span>
+                      {syncEnabled ? 'Aktif' : 'Kapalı'}
+                    </span>
+                  </div>
+                  {lastSyncTime && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">Son Sync:</span>
+                      <span className="text-white">{lastSyncTime.toLocaleString('tr-TR')}</span>
+                    </div>
+                  )}
+                  {binId && (
+                    <div className="mt-3 pt-3 border-t border-white/10">
+                      <p className="text-gray-400 text-xs mb-1">Bin ID (başka cihazda kullanmak için):</p>
+                      <div className="flex gap-2">
+                        <code className="flex-1 bg-black/30 text-emerald-400 px-3 py-2 rounded-lg text-xs break-all">{binId}</code>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(binId); showToast('Kopyalandı!', 'success'); }}
+                          className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-sm"
+                        >
+                          📋
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bilgi */}
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <p className="text-blue-400 text-sm">
+                    ℹ️ Verileriniz güvenli bir şekilde bulutta saklanır. Herhangi bir cihazdan <strong>Bin ID</strong> ile verilerinize erişebilirsiniz.
+                  </p>
+                </div>
+
+                {!syncEnabled ? (
+                  <>
+                    {/* Senkronizasyonu Başlat */}
+                    <button
+                      onClick={enableSync}
+                      disabled={isSyncing}
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-medium transition-all disabled:opacity-50"
+                    >
+                      {isSyncing ? 'Kaydediliyor...' : '☁️ Senkronizasyonu Başlat'}
+                    </button>
+
+                    {/* Başka Cihazdan Veri Çek */}
+                    <div className="border-t border-white/10 pt-4">
+                      <p className="text-gray-400 text-sm mb-2">Başka cihazdan veri çekmek için Bin ID girin:</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          id="importBinId"
+                          placeholder="Bin ID yapıştır..."
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                        />
+                        <button
+                          onClick={() => importFromBinId(document.getElementById('importBinId').value)}
+                          disabled={isSyncing}
+                          className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-3 rounded-xl font-medium transition-all disabled:opacity-50"
+                        >
+                          {isSyncing ? '...' : 'Yükle'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Manuel Sync */}
+                    <button
+                      onClick={saveToCloud}
+                      disabled={isSyncing}
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-medium transition-all disabled:opacity-50"
+                    >
+                      {isSyncing ? 'Senkronize ediliyor...' : '🔄 Şimdi Senkronize Et'}
+                    </button>
+
+                    {/* Buluttan Yükle */}
+                    <button
+                      onClick={loadFromCloud}
+                      disabled={isSyncing}
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl font-medium transition-all disabled:opacity-50"
+                    >
+                      {isSyncing ? '...' : '📥 Buluttan Yükle'}
+                    </button>
+
+                    {/* Senkronizasyonu Kapat */}
+                    <button
+                      onClick={disableSync}
+                      className="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 py-3 rounded-xl font-medium transition-all"
+                    >
+                      Senkronizasyonu Kapat
+                    </button>
+                  </>
+                )}
+              </div>
+            </Modal>
+
+            {/* Footer */}
+            <p className="text-gray-600 text-center text-sm mt-6 no-print">
+              {syncEnabled ? '☁️ Bulut senkronizasyon aktif • ' : ''}Veriler otomatik kaydedilir • Uygulamayı telefonunuza ekleyebilirsiniz
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // ==================== ANA APP WRAPPER ====================
+    function App() {
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [storedUser, setStoredUser] = useState(() => {
+        const saved = localStorage.getItem('app-user');
+        return saved ? JSON.parse(saved) : null;
+      });
+
+      const handleSetUser = (userData) => {
+        localStorage.setItem('app-user', JSON.stringify(userData));
+        setStoredUser(userData);
+      };
+
+      if (!isLoggedIn) {
+        return <LoginScreen onLogin={() => setIsLoggedIn(true)} storedUser={storedUser} onSetUser={handleSetUser} />;
+      }
+
+      return <GelirGiderApp />;
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
